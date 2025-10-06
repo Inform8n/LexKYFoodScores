@@ -1,0 +1,59 @@
+Category,Violation Code,Violation Explanation
+Supervision,1,"Person in charge present, demonstrates knowledge, and performs duties"
+Supervision,2,Certified food protection manager
+Employee Health,3,"Management, food employee and conditional employee; knowledge, responsibilities and reporting"
+Employee Health,4,Proper use of restriction and exclusion
+Employee Health,5,Response procedures for vomiting and diarrheal events
+Good Hygienic Practices,6,"Proper eating, tasting, drinking, or tobacco use"
+Good Hygienic Practices,7,"No discharge from eyes, nose or throat"
+Preventing Contamination by Hands,8,Hands clean and properly washed
+Preventing Contamination by Hands,9,No bare hand contact with ready-to-eat foods or approved alternate method followed
+Preventing Contamination by Hands,10,Adequate hand washing facilities supplied and accessible
+Approved Source,11,Food obtained from approved source
+Approved Source,12,Food received at proper temperature
+Approved Source,13,"Food in good condition, safe, and unadulterated"
+Approved Source,14,"Required records, shellstock tags, parasite destruction"
+Protection from Contamination,15,Food separated and protected
+Protection from Contamination,16,"Proper disposition of returned, previously served, reconditioned and unsafe food"
+Protection from Contamination,17,Food stored covered
+Protection from Contamination,18,Food-contact surfaces: cleaned and sanitized
+Time/Temperature Control for Safety,19,Proper cooking time and temperature
+Time/Temperature Control for Safety,20,Proper reheating procedures for hot holding
+Time/Temperature Control for Safety,21,Proper cold holding temperatures
+Time/Temperature Control for Safety,22,Proper hot holding temperatures
+Time/Temperature Control for Safety,23,Proper cooling time and temperature
+Time/Temperature Control for Safety,24,Time as a public health control: procedures and records
+Time/Temperature Control for Safety,25,Proper date marking and disposition
+Consumer Advisory,26,Consumer advisory provided for raw & undercooked foods
+Highly Susceptible Population,27,Pasteurized food used; prohibited foods not offered
+Chemicals,28,"Food additives, approved and properly used"
+Chemicals,29,"Toxic substances properly identified, stored, used"
+Conformance with Approved Procedures,30,"Compliance with variance, specialized process & HACCP plan"
+Safe Food and Water,31,Pasteurized egg and milk products used when required
+Safe Food and Water,32,Water and ice from an approved source
+Safe Food and Water,33,Variance obtained for specialized processing methods
+Food Temperature Control,34,Proper cooling methods used; adequate equipment for temperature control
+Food Temperature Control,35,Plant food properly cooked for hot holding
+Food Temperature Control,36,Approved thawing methods used
+Food Temperature Control,37,Thermometers provided and accurate
+Food Identification,38,Food properly labeled; original container
+Prevention of Food Contamination,39,"Contamination prevented during food preparation, storage and display"
+Prevention of Food Contamination,40,Personal cleanliness; hair restraints
+Prevention of Food Contamination,41,Wiping cloths: properly used and stored
+Prevention of Food Contamination,42,Washing fruits and vegetables
+Postings and Compliance,43,Posted: Permit/Inspection/Hand washing
+Proper Use of Utensils,44,"In-use utensils, properly stored"
+Proper Use of Utensils,45,"Utensil, equipment and linens: properly stored, dried, handled"
+Proper Use of Utensils,46,"Single use/single service articles: properly stored, used"
+Proper Use of Utensils,47,Gloves used properly
+"Utensils, Equipment and Vending",48,"Food and nonfood-contact surfaces cleanable, properly designed, constructed, and used"
+"Utensils, Equipment and Vending",49,"Ware washing facilities: installed, maintained, used, test strips"
+"Utensils, Equipment and Vending",50,Nonfood-contact surfaces clean
+"Water, Plumbing and Waste",51,Hot and cold water available; adequate pressure; plumbing maintained
+"Water, Plumbing and Waste",52,Plumbing installed; proper backflow devices
+"Water, Plumbing and Waste",53,Sewage and wastewater properly disposed
+Physical Facilities,54,"Toilet facilities: properly constructed, supplied, cleaned"
+Physical Facilities,55,Garbage/refuse properly disposed; facilities maintained
+Physical Facilities,56,"Physical facilities installed, maintained and clean"
+Physical Facilities,57,Adequate ventilation and lighting
+Physical Facilities,58,"Insects, rodents and animals not present"
