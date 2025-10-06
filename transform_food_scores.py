@@ -61,7 +61,7 @@ def transform(input_csv: str, output_csv: str):
 
     # Write cleaned CSV
     data.to_csv(output_csv, index=False)
-    print(f"✅ Cleaned data written to '{output_csv}'")
+    print(f"[SUCCESS] Cleaned data written to '{output_csv}'")
 
 
 def main():

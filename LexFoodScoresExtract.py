@@ -24,11 +24,11 @@ from datetime import datetime
 from typing import Optional
 
 def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = None):
-    print(f"➡️  Extracting food scores from '{pdf_path}'...")
+    print(f">> Extracting food scores from '{pdf_path}'...")
     # Use provided scrape_date or default to today
     if scrape_date is None:
         scrape_date = datetime.now().strftime('%Y-%m-%d')
-    print(f"📅 Scrape date: {scrape_date}")
+    print(f"Scrape date: {scrape_date}")
 
     # Check if file exists to determine if we need headers
     first_write = not os.path.exists(output_csv)
@@ -42,9 +42,9 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
         raise RuntimeError(f"No pages found in PDF: {pdf_path}")
     # per-page extraction with Camelot
     for page_num in range(1, total_pages + 1):
-        print(f"🔍 Camelot: reading page {page_num}/{total_pages}...")
+        print(f"Camelot: reading page {page_num}/{total_pages}...")
         tables = camelot.read_pdf(pdf_path, pages=str(page_num), flavor='lattice')  # type: ignore[reportPrivateImportUsage]
-        print(f"✅ Camelot page {page_num} returned {len(tables)} tables")
+        print(f"Camelot page {page_num} returned {len(tables)} tables")
         for table_idx, table in enumerate(tables, start=1):
             df_page = table.df  # type: ignore
             df_page["ScrapeDate"] = scrape_date  # type: ignore[attr-defined]
@@ -52,13 +52,13 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
             df_page["Table"] = table_idx  # type: ignore[attr-defined]
             df_page["SourceFile"] = os.path.basename(pdf_path)  # type: ignore[attr-defined]
             df_page.to_csv(output_csv, mode="a", header=first_write, index=False)  # type: ignore[attr-defined]
-            print(f"✏️ Appended page {page_num} table {table_idx} to '{output_csv}'")
+            print(f"Appended page {page_num} table {table_idx} to '{output_csv}'")
             first_write = False
-    print(f"🎉 Finished writing all tables to '{output_csv}'")
+    print(f"Finished writing all tables to '{output_csv}'")
     return
     for idx, df in enumerate(tables, start=1):
         rows, cols_count = df.shape if hasattr(df, 'shape') else (None, None)  # type: ignore
-        print(f"➡️  Processing table {idx}: {rows} rows x {cols_count} cols")
+        print(f">> Processing table {idx}: {rows} rows x {cols_count} cols")
         # log column names for debug
         try:
             col_list = [str(c) for c in df.columns]  # type: ignore[attr-defined]
@@ -68,7 +68,7 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
         # detect if this table looks like the inspection table
         cols = [str(c).lower() for c in df.columns]  # type: ignore[attr-defined]
         if any("score" in c for c in cols) and any("permit" in c for c in cols):
-            print(f"    ➕ Table {idx} matched (contains 'score' and 'permit')")
+            print(f"    ++ Table {idx} matched (contains 'score' and 'permit')")
             dfs.append(df)
 
     if not dfs:
@@ -97,11 +97,11 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
         combined["Score"] = pd.to_numeric(combined["Score"], errors="coerce")
 
     combined.to_csv(output_csv, index=False)
-    print(f"✅  Saved food scores to '{output_csv}'")
+    print(f"[SUCCESS] Saved food scores to '{output_csv}'")
 
 
 def extract_infractions(pdf_path: str, output_csv: str):
-    print(f"➡️  Extracting infractions from form '{pdf_path}'...")
+    print(f">> Extracting infractions from form '{pdf_path}'...")
     data = []
     # pattern: code like "3-301.11" followed by description
     pattern = re.compile(r"([0-9]+-[0-9]+\.[0-9]+)\s+(.+)")
@@ -120,14 +120,14 @@ def extract_infractions(pdf_path: str, output_csv: str):
                     })
 
     if not data:
-        print(f"⚠️ No infraction codes detected in '{pdf_path}'. Writing empty infractions CSV.")
+        print(f"[WARNING] No infraction codes detected in '{pdf_path}'. Writing empty infractions CSV.")
         infractions_df = pd.DataFrame([], columns=["InfractionCode", "Description", "Page"])
         infractions_df.to_csv(output_csv, index=False)
         return
 
     infractions_df = pd.DataFrame(data)
     infractions_df.to_csv(output_csv, index=False)
-    print(f"✅  Saved infractions list to '{output_csv}'")
+    print(f"[SUCCESS] Saved infractions list to '{output_csv}'")
 
 
 def main():
@@ -153,7 +153,7 @@ def main():
 
     extract_scores(args.scores_pdf, args.scores_csv, args.scrape_date)
     extract_infractions(args.form_pdf, args.infractions_csv)
-    print("🎉 All done! You can now join 'food_scores.csv' with 'infractions.csv' on the InfractionCode column.")
+    print("[SUCCESS] All done! You can now join 'food_scores.csv' with 'infractions.csv' on the InfractionCode column.")
 
 if __name__ == "__main__":
     main()

@@ -19,6 +19,7 @@ import argparse
 import subprocess
 import sys
 import os
+import shutil
 from datetime import datetime
 
 
@@ -155,6 +156,28 @@ def main():
         "python", "JoinScoresViolations.py"
     ]
     run_command("Step 3: Join with violation descriptions", join_cmd)
+
+    # Move PDFs to PDFs directory if they're not already there
+    pdf_dir = "PDFs"
+    os.makedirs(pdf_dir, exist_ok=True)
+
+    # Move scores PDF if needed
+    if not args.scores_pdf.startswith(pdf_dir):
+        pdf_basename = os.path.basename(args.scores_pdf)
+        target_path = os.path.join(pdf_dir, pdf_basename)
+        if os.path.exists(args.scores_pdf) and not os.path.exists(target_path):
+            print(f"\n>> Moving {pdf_basename} to {pdf_dir}/")
+            shutil.move(args.scores_pdf, target_path)
+            print(f"[SUCCESS] Moved to {target_path}")
+
+    # Move form PDF if needed
+    if not args.form_pdf.startswith(pdf_dir):
+        form_basename = os.path.basename(args.form_pdf)
+        target_form_path = os.path.join(pdf_dir, form_basename)
+        if os.path.exists(args.form_pdf) and not os.path.exists(target_form_path):
+            print(f"\n>> Moving {form_basename} to {pdf_dir}/")
+            shutil.move(args.form_pdf, target_form_path)
+            print(f"[SUCCESS] Moved to {target_form_path}")
 
     # Final summary
     print("\n" + "="*60)
