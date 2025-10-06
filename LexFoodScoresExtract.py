@@ -20,13 +20,18 @@ import pandas as pd
 import camelot  # type: ignore
 import pdfplumber
 import argparse
+from datetime import datetime
+from typing import Optional
 
-def extract_scores(pdf_path: str, output_csv: str):
+def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = None):
     print(f"➡️  Extracting food scores from '{pdf_path}'...")
-    # initialize single output CSV
-    if os.path.exists(output_csv):
-        os.remove(output_csv)
-    first_write = True
+    # Use provided scrape_date or default to today
+    if scrape_date is None:
+        scrape_date = datetime.now().strftime('%Y-%m-%d')
+    print(f"📅 Scrape date: {scrape_date}")
+
+    # Check if file exists to determine if we need headers
+    first_write = not os.path.exists(output_csv)
     # determine total_pages via pdfplumber
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -42,6 +47,7 @@ def extract_scores(pdf_path: str, output_csv: str):
         print(f"✅ Camelot page {page_num} returned {len(tables)} tables")
         for table_idx, table in enumerate(tables, start=1):
             df_page = table.df  # type: ignore
+            df_page["ScrapeDate"] = scrape_date  # type: ignore[attr-defined]
             df_page["Page"] = page_num  # type: ignore[attr-defined]
             df_page["Table"] = table_idx  # type: ignore[attr-defined]
             df_page["SourceFile"] = os.path.basename(pdf_path)  # type: ignore[attr-defined]
@@ -136,6 +142,8 @@ def main():
                         help="Output CSV for the scores data")
     parser.add_argument("--infractions-csv", default="infractions.csv",
                         help="Output CSV for the infractions lookup table")
+    parser.add_argument("--scrape-date",   default=None,
+                        help="Date of the scrape (YYYY-MM-DD). Defaults to today.")
     args = parser.parse_args()
 
     if not os.path.isfile(args.scores_pdf):
@@ -143,7 +151,7 @@ def main():
     if not os.path.isfile(args.form_pdf):
         raise FileNotFoundError(f"Form PDF not found: {args.form_pdf}")
 
-    extract_scores(args.scores_pdf, args.scores_csv)
+    extract_scores(args.scores_pdf, args.scores_csv, args.scrape_date)
     extract_infractions(args.form_pdf, args.infractions_csv)
     print("🎉 All done! You can now join 'food_scores.csv' with 'infractions.csv' on the InfractionCode column.")
 

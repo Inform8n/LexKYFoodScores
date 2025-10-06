@@ -23,6 +23,10 @@ DEFAULT_HEADERS = [
     "Food or Retail",
     "Score",
     "Violations",
+    "ScrapeDate",
+    "Page",
+    "Table",
+    "SourceFile",
 ]
 
 
@@ -30,20 +34,21 @@ def transform(input_csv: str, output_csv: str):
     # Read the raw CSV
     df = pd.read_csv(input_csv, dtype=str)
 
-    # Ensure there are at least 8 columns
+    # Ensure there are at least 12 columns
     if df.shape[1] < len(DEFAULT_HEADERS):
         print(f"Error: expected at least {len(DEFAULT_HEADERS)} columns, found {df.shape[1]}", file=sys.stderr)
         sys.exit(1)
 
-    # Select and rename the first 8 columns
+    # Select and rename the first 12 columns
     data = df.iloc[:, : len(DEFAULT_HEADERS)].copy()
     data.columns = DEFAULT_HEADERS
 
     # Drop rows where Permit # is not purely numeric
     data = data[data['Permit #'].str.match(r'^\d+$')]
 
-    # Parse date column
+    # Parse date columns
     data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+    data['ScrapeDate'] = pd.to_datetime(data['ScrapeDate'], errors='coerce')
 
     # Optionally drop rows with invalid dates
     data = data.dropna(subset=['Date'])

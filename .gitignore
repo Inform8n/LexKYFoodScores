@@ -1,4 +1,40 @@
-/Food-Retail_Inspections-06.2024-06.2025.pdf
-/food_scores.csv
-/food_scores_cleaned.csv
-/joined_scores_violations.csv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# Archive
+Archive/
+
+# PDF source files (stored in PDFs directory, may be large)
+# Keep the PDFs directory structure but ignore the PDF files themselves
+PDFs/*.pdf
+
+# Intermediate CSV files (not needed in repo)
+food_scores.csv
+food_scores_cleaned.csv
+
+# Final output CSV (keep this one!)
+# We want joined_scores_violations.csv in the repo
+# We want CodeViolations.csv in the repo (reference data)
+
+# OS
+.DS_Store
+Thumbs.db
