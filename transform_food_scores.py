@@ -59,9 +59,16 @@ def transform(input_csv: str, output_csv: str):
     # Remove any empty violations entries
     data = data[data['Violations'] != '']
 
+    # Remove duplicates (can happen during PDF extraction)
+    before_dedup = len(data)
+    data = data.drop_duplicates(subset=['Permit #', 'Establishment Name', 'Date', 'Violations', 'ScrapeDate'])
+    after_dedup = len(data)
+    if before_dedup != after_dedup:
+        print(f"[INFO] Removed {before_dedup - after_dedup:,} duplicate records")
+
     # Write cleaned CSV
     data.to_csv(output_csv, index=False)
-    print(f"[SUCCESS] Cleaned data written to '{output_csv}'")
+    print(f"[SUCCESS] Cleaned data written to '{output_csv}' ({after_dedup:,} records)")
 
 
 def main():
