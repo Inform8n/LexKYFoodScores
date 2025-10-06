@@ -9,13 +9,10 @@ Dependencies:
 Usage:
     python extract_inspections.py \
         --scores-pdf Food-Retail_Inspections-06.2024-06.2025.pdf \
-        --form-pdf 2585_001.pdf \
-        --scores-csv food_scores.csv \
-        --infractions-csv infractions.csv
+        --scores-csv food_scores.csv
 """
 
 import os
-import re
 import pandas as pd
 import camelot  # type: ignore
 import pdfplumber
@@ -100,60 +97,23 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
     print(f"[SUCCESS] Saved food scores to '{output_csv}'")
 
 
-def extract_infractions(pdf_path: str, output_csv: str):
-    print(f">> Extracting infractions from form '{pdf_path}'...")
-    data = []
-    # pattern: code like "3-301.11" followed by description
-    pattern = re.compile(r"([0-9]+-[0-9]+\.[0-9]+)\s+(.+)")
-    
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages, start=1):
-            text = page.extract_text() or ""
-            for line in text.split("\n"):
-                m = pattern.match(line.strip())
-                if m:
-                    code, desc = m.groups()
-                    data.append({
-                        "InfractionCode": code,
-                        "Description": desc.strip(),
-                        "Page": page_num
-                    })
-
-    if not data:
-        print(f"[WARNING] No infraction codes detected in '{pdf_path}'. Writing empty infractions CSV.")
-        infractions_df = pd.DataFrame([], columns=["InfractionCode", "Description", "Page"])
-        infractions_df.to_csv(output_csv, index=False)
-        return
-
-    infractions_df = pd.DataFrame(data)
-    infractions_df.to_csv(output_csv, index=False)
-    print(f"[SUCCESS] Saved infractions list to '{output_csv}'")
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract food inspection scores and infraction codes from PDFs"
+        description="Extract food inspection scores from PDF"
     )
     parser.add_argument("--scores-pdf",    default="Food-Retail_Inspections-06.2024-06.2025.pdf",
                         help="Path to the food-scores PDF")
-    parser.add_argument("--form-pdf",      default="2585_001.pdf",
-                        help="Path to the infractions form PDF")
     parser.add_argument("--scores-csv",    default="food_scores.csv",
                         help="Output CSV for the scores data")
-    parser.add_argument("--infractions-csv", default="infractions.csv",
-                        help="Output CSV for the infractions lookup table")
     parser.add_argument("--scrape-date",   default=None,
                         help="Date of the scrape (YYYY-MM-DD). Defaults to today.")
     args = parser.parse_args()
 
     if not os.path.isfile(args.scores_pdf):
         raise FileNotFoundError(f"Scores PDF not found: {args.scores_pdf}")
-    if not os.path.isfile(args.form_pdf):
-        raise FileNotFoundError(f"Form PDF not found: {args.form_pdf}")
 
     extract_scores(args.scores_pdf, args.scores_csv, args.scrape_date)
-    extract_infractions(args.form_pdf, args.infractions_csv)
-    print("[SUCCESS] All done! You can now join 'food_scores.csv' with 'infractions.csv' on the InfractionCode column.")
+    print("[SUCCESS] All done! Data extracted to 'food_scores.csv'.")
 
 if __name__ == "__main__":
     main()

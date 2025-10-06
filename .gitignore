@@ -30,6 +30,7 @@ PDFs/*.pdf
 # Intermediate CSV files (not needed in repo)
 food_scores.csv
 food_scores_cleaned.csv
+infractions.csv
 
 # Final output CSV (keep this one!)
 # We want joined_scores_violations.csv in the repo

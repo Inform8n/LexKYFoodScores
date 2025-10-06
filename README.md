@@ -67,7 +67,6 @@ python run_pipeline.py --scores-pdf "PDFs/Food-Retail_Inspections-06.2024-06.202
 **Options:**
 - `--download`: Force download of latest PDF even if you specify --scores-pdf
 - `--scores-pdf PATH`: Path to the inspection scores PDF (if not provided, downloads latest)
-- `--form-pdf PATH`: Path to the infractions form PDF (default: `2585_001.pdf`)
 - `--scrape-date YYYY-MM-DD`: Date of scrape (defaults to today)
 - `--scores-csv PATH`: Output path for raw data (default: `food_scores.csv`)
 - `--cleaned-csv PATH`: Output path for cleaned data (default: `food_scores_cleaned.csv`)

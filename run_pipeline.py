@@ -12,7 +12,6 @@ Usage:
 
     Optional arguments:
     --scrape-date YYYY-MM-DD  Date of the scrape (defaults to today)
-    --form-pdf PATH           Path to infractions form PDF (default: 2585_001.pdf)
 """
 
 import argparse
@@ -55,11 +54,6 @@ def main():
         help="Download the latest PDF before processing"
     )
     parser.add_argument(
-        "--form-pdf",
-        default="2585_001.pdf",
-        help="Path to the infractions form PDF"
-    )
-    parser.add_argument(
         "--scrape-date",
         default=None,
         help="Date of the scrape (YYYY-MM-DD). Defaults to today."
@@ -73,11 +67,6 @@ def main():
         "--cleaned-csv",
         default="food_scores_cleaned.csv",
         help="Output CSV for cleaned data"
-    )
-    parser.add_argument(
-        "--infractions-csv",
-        default="infractions.csv",
-        help="Output CSV for infractions lookup"
     )
 
     args = parser.parse_args()
@@ -115,17 +104,12 @@ def main():
         print("Tip: Use --download to automatically download the latest PDF")
         sys.exit(1)
 
-    if not os.path.isfile(args.form_pdf):
-        print(f"[ERROR] Form PDF not found: {args.form_pdf}")
-        sys.exit(1)
-
     # Display pipeline info
     scrape_date = args.scrape_date or datetime.now().strftime('%Y-%m-%d')
     print("\n" + "="*60)
     print("FOOD INSPECTION DATA PIPELINE")
     print("="*60)
     print(f"Scores PDF:     {args.scores_pdf}")
-    print(f"Form PDF:       {args.form_pdf}")
     print(f"Scrape Date:    {scrape_date}")
     print(f"Output CSV:     joined_scores_violations.csv")
     print("="*60)
@@ -134,9 +118,7 @@ def main():
     extract_cmd = [
         "python", "LexFoodScoresExtract.py",
         "--scores-pdf", args.scores_pdf,
-        "--form-pdf", args.form_pdf,
         "--scores-csv", args.scores_csv,
-        "--infractions-csv", args.infractions_csv,
     ]
     if args.scrape_date:
         extract_cmd.extend(["--scrape-date", args.scrape_date])
@@ -169,15 +151,6 @@ def main():
             print(f"\n>> Moving {pdf_basename} to {pdf_dir}/")
             shutil.move(args.scores_pdf, target_path)
             print(f"[SUCCESS] Moved to {target_path}")
-
-    # Move form PDF if needed
-    if not args.form_pdf.startswith(pdf_dir):
-        form_basename = os.path.basename(args.form_pdf)
-        target_form_path = os.path.join(pdf_dir, form_basename)
-        if os.path.exists(args.form_pdf) and not os.path.exists(target_form_path):
-            print(f"\n>> Moving {form_basename} to {pdf_dir}/")
-            shutil.move(args.form_pdf, target_form_path)
-            print(f"[SUCCESS] Moved to {target_form_path}")
 
     # Final summary
     print("\n" + "="*60)
