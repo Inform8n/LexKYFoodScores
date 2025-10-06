@@ -39,3 +39,7 @@ infractions.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Local-only automation scripts (not for public repo)
+auto_commit.py
+run_pipeline_with_commit.bat
