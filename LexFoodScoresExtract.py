@@ -52,49 +52,6 @@ def extract_scores(pdf_path: str, output_csv: str, scrape_date: Optional[str] = 
             print(f"Appended page {page_num} table {table_idx} to '{output_csv}'")
             first_write = False
     print(f"Finished writing all tables to '{output_csv}'")
-    return
-    for idx, df in enumerate(tables, start=1):
-        rows, cols_count = df.shape if hasattr(df, 'shape') else (None, None)  # type: ignore
-        print(f">> Processing table {idx}: {rows} rows x {cols_count} cols")
-        # log column names for debug
-        try:
-            col_list = [str(c) for c in df.columns]  # type: ignore[attr-defined]
-        except Exception:
-            col_list = []
-        print(f"    columns: {col_list}")
-        # detect if this table looks like the inspection table
-        cols = [str(c).lower() for c in df.columns]  # type: ignore[attr-defined]
-        if any("score" in c for c in cols) and any("permit" in c for c in cols):
-            print(f"    ++ Table {idx} matched (contains 'score' and 'permit')")
-            dfs.append(df)
-
-    if not dfs:
-        raise RuntimeError("No table containing both 'Permit' and 'Score' columns was found.")
-
-    # concatenate all pages
-    combined = pd.concat(dfs, ignore_index=True)
-
-    # sometimes the first row is a repeat of the header
-    # detect if row-0 contains headers
-    first_row = combined.iloc[0].astype(str).str.lower()
-    if any("score" in cell for cell in first_row):
-        combined.columns = combined.iloc[0]
-        combined = combined.drop(0).reset_index(drop=True)
-
-    # clean up column names
-    combined.columns = [str(col).strip() for col in combined.columns]
-
-    # convert date columns
-    for col in combined.columns:
-        if "date" in col.lower():
-            combined[col] = pd.to_datetime(combined[col], errors="coerce")
-
-    # convert Score to numeric
-    if "Score" in combined.columns:
-        combined["Score"] = pd.to_numeric(combined["Score"], errors="coerce")
-
-    combined.to_csv(output_csv, index=False)
-    print(f"[SUCCESS] Saved food scores to '{output_csv}'")
 
 
 def main():
