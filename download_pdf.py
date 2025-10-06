@@ -14,6 +14,7 @@ import argparse
 import os
 import re
 import sys
+import hashlib
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import urllib.request
@@ -94,6 +95,16 @@ def download_pdf(url: str, output_path: str):
         sys.exit(1)
 
 
+def calculate_md5(file_path: str) -> str:
+    """Calculate MD5 hash of a file."""
+    md5_hash = hashlib.md5()
+    with open(file_path, "rb") as f:
+        # Read in chunks to handle large files
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5_hash.update(chunk)
+    return md5_hash.hexdigest()
+
+
 def extract_date_from_filename(filename: str) -> str:
     """Extract date information from the PDF filename."""
     # Look for patterns like "06.2024-06.2025" in the filename
@@ -122,6 +133,11 @@ def main():
         default=None,
         help="Custom output filename (if not specified, uses original name)"
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force download even if file already exists with same MD5"
+    )
 
     args = parser.parse_args()
 
@@ -149,16 +165,55 @@ def main():
     # Download to output directory
     output_path = os.path.join(args.output_dir, filename)
 
+    # Check if file already exists and compare MD5
+    if os.path.exists(output_path) and not args.force:
+        print(f"\n>> File already exists: {output_path}")
+        print(">> Checking if content has changed (MD5)...")
+
+        # Calculate MD5 of existing file
+        existing_md5 = calculate_md5(output_path)
+        print(f"Existing file MD5: {existing_md5}")
+
+        # Download to temp location to check MD5
+        import tempfile
+        temp_path = os.path.join(tempfile.gettempdir(), f"temp_{filename}")
+        download_pdf(pdf_url, temp_path)
+        new_md5 = calculate_md5(temp_path)
+        print(f"New file MD5:      {new_md5}")
+
+        if existing_md5 == new_md5:
+            print("\n[INFO] PDF unchanged - no new data available")
+            print("Skipping processing (file is identical)")
+            os.remove(temp_path)
+            print("\n" + "="*60)
+            print("NO UPDATE NEEDED")
+            print("="*60)
+            print(f"Current version:   {output_path}")
+            print(f"MD5:               {existing_md5}")
+            print("\nThe online PDF is identical to your local copy.")
+            print("No processing required.")
+            print("="*60 + "\n")
+            sys.exit(0)
+        else:
+            print("\n[INFO] PDF has changed - new data detected!")
+            print(">> Replacing old version...")
+            os.replace(temp_path, output_path)
+    else:
+        if args.force:
+            print("\n>> Force download requested, skipping MD5 check...")
+        # Download the PDF
+        download_pdf(pdf_url, output_path)
+
+    # Calculate MD5 of final file
+    final_md5 = calculate_md5(output_path)
+
     # Also create a timestamped historical copy
     base_name, ext = os.path.splitext(filename)
     historical_filename = f"{base_name}_{timestamp}{ext}"
     historical_path = os.path.join(args.output_dir, historical_filename)
 
-    # Download the PDF
-    download_pdf(pdf_url, output_path)
-
     # Create historical copy
-    print(f">> Creating historical copy: {historical_filename}")
+    print(f"\n>> Creating historical copy: {historical_filename}")
     import shutil
     shutil.copy2(output_path, historical_path)
     print(f"[SUCCESS] Historical copy saved")
@@ -169,6 +224,7 @@ def main():
     print(f"Current version:   {output_path}")
     print(f"Historical copy:   {historical_path}")
     print(f"Date range:        {date_info}")
+    print(f"MD5:               {final_md5}")
     print("\nYou can now run the pipeline with:")
     print(f'  python run_pipeline.py --scores-pdf "{output_path}"')
     print("="*60 + "\n")

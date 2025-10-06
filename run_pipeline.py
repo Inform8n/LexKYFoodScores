@@ -77,11 +77,17 @@ def main():
         download_cmd = ["python", "download_pdf.py"]
         result = subprocess.run(download_cmd, capture_output=True, text=True)
 
+        # Exit code 0 means either download succeeded or no update needed (both are OK)
         if result.returncode != 0:
             print(f"[ERROR] Failed to download PDF: {result.stderr}")
             sys.exit(1)
 
         print(result.stdout)
+
+        # Check if download was skipped (no update needed)
+        if "NO UPDATE NEEDED" in result.stdout:
+            print("[INFO] No new data to process. Exiting.")
+            sys.exit(0)
 
         # Find the downloaded PDF in PDFs directory
         pdf_dir = "PDFs"

@@ -43,17 +43,26 @@ LexKYFoodScores/
 
 ### Quick Start: Automated Download and Processing
 
-The easiest way is to let the pipeline automatically download the latest PDF:
+**Option 1: Windows Batch File (Easiest)**
+
+Double-click `run_pipeline.bat` or run from command prompt:
+
+```bash
+run_pipeline.bat
+```
+
+**Option 2: Python Command**
 
 ```bash
 python run_pipeline.py
 ```
 
-This will:
+Both methods will:
 1. Download the latest PDF from the LFCHD website
-2. Store it in the `PDFs/` directory with a timestamp for historical tracking
-3. Run all three processing steps
-4. Generate the final `joined_scores_violations.csv` file
+2. Check MD5 hash - skip processing if PDF is unchanged (perfect for daily runs!)
+3. Store PDFs in the `PDFs/` directory with timestamps for historical tracking
+4. Run all three processing steps
+5. Generate the final `joined_scores_violations.csv` file
 
 **Alternative: Manual PDF Download**
 
@@ -180,6 +189,42 @@ early_scrapes = df[df['ScrapeDate'] < '2025-06-01']['Permit #'].unique()
 recent_scrapes = df[df['ScrapeDate'] >= '2025-06-01']['Permit #'].unique()
 disappeared = set(early_scrapes) - set(recent_scrapes)
 ```
+
+## Automated Scheduling
+
+### Windows Task Scheduler (Recommended)
+
+Set up automatic daily checks for new inspection data:
+
+1. **Open Task Scheduler**
+   - Press `Win + R`, type `taskschd.msc`, press Enter
+
+2. **Create Basic Task**
+   - Click "Create Basic Task" in the right panel
+   - Name: `Food Inspection Data Update`
+   - Description: `Daily check for new food inspection data`
+
+3. **Set Trigger**
+   - Choose "Daily"
+   - Set start time (e.g., 6:00 AM)
+   - Recur every: 1 day
+
+4. **Set Action**
+   - Choose "Start a program"
+   - Program/script: `C:\PythonCode\LexKYFoodScores\run_pipeline.bat`
+   - Start in: `C:\PythonCode\LexKYFoodScores`
+   - (Adjust path to match your installation)
+
+5. **Finish**
+   - Check "Open Properties dialog" to review settings
+
+**Why Daily?**
+- MD5 check ensures no duplicate processing
+- Script exits quickly if no new data (< 5 seconds)
+- Always have latest data when it's published
+
+### Manual Schedule
+You can also run manually whenever you want fresh data - the MD5 check prevents redundant processing.
 
 ## Data Source
 
