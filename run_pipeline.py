@@ -20,6 +20,7 @@ import sys
 import os
 import shutil
 from datetime import datetime
+from dotenv import load_dotenv
 
 
 def run_command(description: str, command: list):
@@ -37,6 +38,12 @@ def run_command(description: str, command: list):
 
     print(f"\n[SUCCESS] {description} completed successfully!")
     return result
+
+
+def is_google_sheets_configured():
+    """Check if Google Sheets sync is configured in .env file."""
+    load_dotenv()
+    return os.getenv('GOOGLE_SHEET_ID') is not None
 
 
 def main():
@@ -144,6 +151,15 @@ def main():
         "python", "JoinScoresViolations.py"
     ]
     run_command("Step 3: Join with violation descriptions", join_cmd)
+
+    # Step 4 (Optional): Sync to Google Sheets
+    if is_google_sheets_configured():
+        sync_cmd = [
+            "python", "sync_to_sheets.py"
+        ]
+        run_command("Step 4: Sync to Google Sheets", sync_cmd)
+    else:
+        print("\n[INFO] Skipping Google Sheets sync (not configured in .env)")
 
     # Move PDFs to PDFs directory if they're not already there
     pdf_dir = "PDFs"

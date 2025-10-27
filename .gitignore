@@ -12,6 +12,12 @@ dist/
 *.egg-info/
 .pytest_cache/
 
+# Environment variables and credentials
+.env
+google_credentials.json
+credentials.json
+token.json
+
 # IDEs
 .vscode/
 .idea/
@@ -19,13 +25,14 @@ dist/
 *.swo
 *~
 .claude/
+node_modules/
+PDFs/
 
 # Archive
 Archive/
 
 # PDF source files (stored in PDFs directory, may be large)
-# Keep the PDFs directory structure but ignore the PDF files themselves
-PDFs/*.pdf
+PDFs/
 
 # Intermediate CSV files (not needed in repo)
 food_scores.csv
