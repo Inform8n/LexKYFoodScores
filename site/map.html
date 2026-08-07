@@ -147,6 +147,10 @@ let W = 0, Ht = 0;
 
 function resize() {
   const r = cv.getBoundingClientRect();
+  // A zero-sized measurement (the drawer covering the page mid-layout on mobile
+  // will produce one) would give a negative scale and project every point off
+  // the canvas, leaving a map that still looks right but answers no clicks.
+  if (r.width < 2 || r.height < 2) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = r.width; Ht = r.height;
   cv.width = Math.round(W * dpr); cv.height = Math.round(Ht * dpr);
@@ -252,15 +256,33 @@ function draw() {
 
 /* ---------------- interaction ---------------- */
 let drag = null;
+
+function endDrag(e) {
+  cv.classList.remove('drag');
+  // Release explicitly. A capture left behind by a cancelled touch keeps
+  // routing later pointers to the canvas element that no longer expects them.
+  if (e && cv.hasPointerCapture?.(e.pointerId)) {
+    try { cv.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+  }
+  drag = null;
+}
+
 cv.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
-  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+  // Must not throw: an exception here would skip everything after it, and a
+  // synthetic or already-released pointer id makes this raise NotFoundError.
+  try { cv.setPointerCapture(e.pointerId); } catch { /* fine without capture */ }
+  cv.classList.add('drag');
 });
 cv.addEventListener('pointerup', e => {
-  cv.classList.remove('drag');
-  if (drag && !drag.moved) clickAt(e);
-  drag = null;
+  const wasTap = drag && !drag.moved;
+  endDrag(e);
+  if (wasTap) clickAt(e);
 });
+// Touch gestures get cancelled routinely — without this the drag state and the
+// pointer capture both survive the gesture that was abandoned.
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('lostpointercapture', () => { cv.classList.remove('drag'); drag = null; });
 cv.addEventListener('pointerleave', () => { drag = null; cv.classList.remove('drag'); tip.style.opacity = 0; });
 
 const tip = document.getElementById('tip');
@@ -351,6 +373,21 @@ document.getElementById('geonote').innerHTML =
 updateLegend();
 new ResizeObserver(resize).observe(cv);
 resize();
+
+/* Debug hook for maptest.html — lets the harness aim a synthetic tap at a real
+   point and read the interaction state back out. Harmless in production. */
+window.__testProbe = {
+  pointScreenPos() {
+    for (const p of shown) {
+      const [x, y] = toScreen(...px(p));
+      if (x > 30 && x < W - 30 && y > 30 && y < Ht - 30) return { x, y, name: p.n };
+    }
+    return null;
+  },
+  state: () => ({ shown: shown.length, s: +view.s.toFixed(2), tx: Math.round(view.tx),
+                  ty: Math.round(view.ty), fitS: +fit.s.toFixed(1), W: Math.round(W), Ht: Math.round(Ht),
+                  dragging: !!drag }),
+};
 </script>
 </body>
 </html>

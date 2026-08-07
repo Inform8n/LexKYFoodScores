@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map interaction test</title>
+<style>
+  body { margin: 0; font: 13px ui-monospace, Menlo, Consolas, monospace; background: #111; color: #eee; }
+  #log { padding: 10px 12px; white-space: pre-wrap; }
+  iframe { width: 390px; height: 700px; border: 1px solid #444; display: block; }
+  .PASS { color: #6f6; } .FAIL { color: #f77; } .INFO { color: #99f; }
+</style>
+</head>
+<body>
+<div id="log">running…</div>
+<iframe id="f" src="map.html"></iframe>
+<script>
+const log = [];
+// Escape: the messages carry tag names like <canvas>, which would otherwise be
+// injected as real elements and quietly corrupt the report.
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const say = (cls, m) => { log.push(`<span class="${cls}">${cls}</span>  ${esc(m)}`); render(); };
+const render = () => { document.getElementById('log').innerHTML = log.join('\n'); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function tap(win, elm, x, y) {
+  const opts = { bubbles: true, cancelable: true, composed: true,
+                 clientX: x, clientY: y, pointerId: 1, pointerType: 'touch',
+                 isPrimary: true, button: 0, buttons: 1 };
+  elm.dispatchEvent(new win.PointerEvent('pointerdown', opts));
+  elm.dispatchEvent(new win.PointerEvent('pointerup', { ...opts, buttons: 0 }));
+}
+
+(async () => {
+  const f = document.getElementById('f');
+  await new Promise(r => f.addEventListener('load', r));
+  const win = f.contentWindow, doc = f.contentDocument;
+  await sleep(6000);   // module + data load
+
+  const cv = doc.getElementById('cv');
+  if (!cv) { say('FAIL', 'canvas not found'); return; }
+  const r = cv.getBoundingClientRect();
+  say('INFO', `canvas ${Math.round(r.width)}x${Math.round(r.height)} at (${Math.round(r.left)},${Math.round(r.top)})`);
+
+  // Find a screen position that actually sits on a point, by asking the page.
+  const probe = win.__testProbe;
+  if (!probe) { say('FAIL', '__testProbe missing — add the debug hook to map.html'); return; }
+  const spot = probe.pointScreenPos();
+  if (!spot) { say('FAIL', 'no visible point to aim at'); return; }
+  say('INFO', `aiming at a point at (${Math.round(spot.x)},${Math.round(spot.y)}) — ${spot.name}`);
+
+  const drawer = () => doc.querySelector('.drawer');
+  const isOpen = () => drawer() && drawer().classList.contains('open');
+
+  // --- first tap
+  tap(win, cv, r.left + spot.x, r.top + spot.y);
+  await sleep(1500);
+  say(isOpen() ? 'PASS' : 'FAIL', `first tap opened the drawer (open=${isOpen()})`);
+
+  // --- close it the way a person would
+  const close = doc.querySelector('.drawer .close');
+  close.click();
+  await sleep(2500);   // past the .2s slide plus the delayed visibility flip
+  say(!isOpen() ? 'PASS' : 'FAIL', `drawer closed (open=${isOpen()})`);
+
+  // --- the closed drawer must be inert, not merely shifted out of sight
+  const bd = doc.querySelector('.drawer-backdrop');
+  const cs = win.getComputedStyle(bd), ds = win.getComputedStyle(drawer());
+  say(ds.pointerEvents === 'none' ? 'PASS' : 'FAIL',
+      `closed drawer is not hit-testable (pointer-events=${ds.pointerEvents})`);
+  say(cs.pointerEvents === 'none' ? 'PASS' : 'FAIL',
+      `closed backdrop is not hit-testable (pointer-events=${cs.pointerEvents})`);
+  say(drawer().inert ? 'PASS' : 'FAIL', `closed drawer is inert (inert=${drawer().inert})`);
+  say(bd.inert ? 'PASS' : 'FAIL', `closed backdrop is inert (inert=${bd.inert})`);
+
+  // elementFromPoint wants VIEWPORT coordinates; spot is canvas-relative.
+  const top = doc.elementFromPoint(r.left + spot.x, r.top + spot.y);
+  const tag = top ? top.tagName.toLowerCase() : 'null';
+  say(tag === 'canvas' ? 'PASS' : 'FAIL', `a tap over the map lands on the canvas (got <${tag}>)`);
+
+  // The worst case the fix targets: the panel sitting just off the right edge.
+  const offRight = doc.elementFromPoint(r.left + r.width - 3, r.top + 40);
+  say('INFO', `element just inside the map's right edge: <${offRight ? offRight.tagName.toLowerCase() : 'null'}>`);
+  say('INFO', `probe state: ${JSON.stringify(probe.state())}`);
+
+  // --- second tap on the same point
+  const spot2 = probe.pointScreenPos();
+  say('INFO', `second aim: ${spot2 ? Math.round(spot2.x) + ',' + Math.round(spot2.y) : 'none'}`);
+  tap(win, cv, r.left + (spot2 ? spot2.x : spot.x), r.top + (spot2 ? spot2.y : spot.y));
+  await sleep(1500);
+  say(isOpen() ? 'PASS' : 'FAIL', `second tap re-opened the drawer (open=${isOpen()})  <-- the reported bug`);
+
+  render();
+})();
+</script>
+</body>
+</html>

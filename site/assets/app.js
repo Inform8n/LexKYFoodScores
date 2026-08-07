@@ -64,7 +64,7 @@ export function tipper(tipEl, hostEl) {
 }
 
 /* ---------------- the shared detail drawer ---------------- */
-let drawerEls = null, codeMap = null;
+let drawerEls = null, codeMap = null, lastTrigger = null;
 
 function buildDrawer() {
   if (drawerEls) return drawerEls;
@@ -73,6 +73,11 @@ function buildDrawer() {
   const head = h('div', { class: 'dh' });
   const close = h('button', { class: 'close', 'aria-label': 'Close', onclick: closeDrawer }, '×');
   const drawer = h('div', { class: 'drawer', role: 'dialog', 'aria-modal': 'true' }, close, head, body);
+  // `inert` takes the panel out of hit-testing AND the focus order the instant
+  // it closes, without waiting on a transition. The CSS visibility/pointer-events
+  // rules still apply; this is what makes the closed state unambiguous.
+  drawer.inert = true;
+  backdrop.inert = true;
   document.body.append(backdrop, drawer);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
   drawerEls = { backdrop, drawer, head, body, close };
@@ -83,10 +88,18 @@ export function closeDrawer() {
   if (!drawerEls) return;
   drawerEls.drawer.classList.remove('open');
   drawerEls.backdrop.classList.remove('open');
+  drawerEls.drawer.inert = true;
+  drawerEls.backdrop.inert = true;
+  // Focus would otherwise be stranded inside a panel nobody can see.
+  if (lastTrigger && document.contains(lastTrigger)) lastTrigger.focus();
+  else document.activeElement?.blur?.();
 }
 
 export async function openDetail(place) {
   const { backdrop, drawer, head, body, close } = buildDrawer();
+  lastTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  drawer.inert = false;
+  backdrop.inert = false;
   head.innerHTML = '';
   head.append(
     h('h2', {}, place.n || `Permit ${place.p}`),

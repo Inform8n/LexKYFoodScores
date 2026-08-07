@@ -173,15 +173,33 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 .tip .k { color: var(--ink-3); }
 
 /* ---------------- detail drawer ---------------- */
-.drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.32); opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 60; }
+/* A closed drawer must be completely inert, not merely moved out of sight.
+   `transform` alone leaves the panel live and hit-testable just past the right
+   edge; on a phone it is full-width, and as the URL bar hides the visual
+   viewport shifts and that invisible panel lands back over the page, swallowing
+   every tap on the map underneath.
+
+   `pointer-events: none` here plus the `inert` attribute set in app.js are what
+   actually close it — both apply the instant the class is removed. Deliberately
+   no visibility transition: making inertness depend on a timed transition
+   finishing is exactly the kind of thing that works on a desktop and fails on a
+   phone under load. */
+.drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.32);
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s; z-index: 60;
+}
 .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%);
   background: var(--surface); border-left: 1px solid var(--rule);
-  transform: translateX(100%); transition: transform .2s ease; z-index: 61;
+  transform: translateX(100%); pointer-events: none;
+  transition: transform .2s ease; z-index: 61;
   display: flex; flex-direction: column;
 }
-.drawer.open { transform: none; }
+.drawer.open { transform: none; pointer-events: auto; }
+/* Belt-and-braces for browsers without `inert`. */
+.drawer[inert], .drawer-backdrop[inert] { pointer-events: none; }
 .drawer .dh { padding: 18px 22px 14px; border-bottom: 1px solid var(--rule); }
 .drawer .dh h2 { margin: 0 0 3px; font-size: 19px; font-weight: 640; letter-spacing: -0.015em; text-wrap: balance; }
 .drawer .dh .addr { font-size: 13px; color: var(--ink-2); }
