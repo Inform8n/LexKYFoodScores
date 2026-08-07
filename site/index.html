@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insights — Lexington Food Inspections</title>
+<meta name="description" content="Twenty years of Lexington-Fayette County food inspection scores: trends, violations, and which establishments look clean today on top of a worse record.">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🍽️</text></svg>">
+</head>
+<body>
+
+<header class="topbar"><div class="inner">
+  <a class="brand" href="index.html">Lexington Food Scores <span>· unofficial</span></a>
+  <nav>
+    <a href="index.html">Insights</a>
+    <a href="map.html">Map</a>
+    <a href="search.html">Search</a>
+  </nav>
+  <div class="asof"></div>
+</div></header>
+
+<main class="wrap">
+  <div class="page-head">
+    <p class="eyebrow">Lexington-Fayette County Health Department</p>
+    <h1>Twenty years of restaurant inspections</h1>
+    <p>Every figure here is computed from LFCHD's own published reports. The one worth
+       your attention is the gap between what a place scores today and what its whole
+       record says.</p>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+
+    <section class="card full" id="c-gap">
+      <header>
+        <h2>The reputation gap</h2>
+        <button class="toggle" data-card="c-gap">Table</button>
+      </header>
+      <p class="note">
+        Every establishment with at least 10 scored inspections and a visit in 2025.
+        Horizontal is a <b>time-weighted history score</b> (two-year half-life — recent
+        inspections dominate, old ones fade but never vanish); vertical is the
+        <b>most recent score</b>. The diagonal is where the two agree. Sitting well above it
+        means scoring well today on top of a worse record. Hover any point for the name;
+        click to open its full history.
+      </p>
+      <div class="plot"><div id="p-scatter"></div><div class="tip" id="t-scatter"></div></div>
+      <div class="tv scroller" id="tv-gap"></div>
+    </section>
+
+    <section class="card full" id="c-flag">
+      <header>
+        <h2>Clean today, patchy history</h2>
+        <button class="toggle" data-card="c-flag">Table</button>
+      </header>
+      <p class="note">The widest gaps between the latest score and the weighted history.
+         Every one of these would show a reassuring number in the window today.</p>
+      <div class="plot scroller"><div id="p-flag"></div><div class="tip" id="t-flag"></div></div>
+      <div class="tv scroller" id="tv-flag"></div>
+    </section>
+
+    <section class="card" id="c-trend">
+      <header><h2>Scores over time</h2><button class="toggle" data-card="c-trend">Table</button></header>
+      <p class="note">Median score per year; the band spans the middle half of inspections.</p>
+      <div class="plot"><div id="p-trend"></div><div class="tip" id="t-trend"></div></div>
+      <div class="tv scroller" id="tv-trend"></div>
+    </section>
+
+    <section class="card" id="c-dist">
+      <header><h2>Where the scores land</h2><button class="toggle" data-card="c-dist">Table</button></header>
+      <p class="note">All scored inspections since 2005. Severely top-heavy — which is exactly
+         why a raw average hides so much.</p>
+      <div class="plot"><div id="p-dist"></div><div class="tip" id="t-dist"></div></div>
+      <div class="tv scroller" id="tv-dist"></div>
+    </section>
+
+    <section class="card" id="c-viol">
+      <header><h2>Most-cited violations</h2><button class="toggle" data-card="c-viol">Table</button></header>
+      <p class="note">Across every recorded citation.</p>
+      <div class="plot"><div id="p-viol"></div><div class="tip" id="t-viol"></div></div>
+      <div class="tv scroller" id="tv-viol"></div>
+    </section>
+
+    <section class="card" id="c-zip">
+      <header><h2>By ZIP code</h2><button class="toggle" data-card="c-zip">Table</button></header>
+      <p class="note">Mean score by ZIP. Medians sit at 97–98 nearly everywhere, so the mean is
+         what separates them — and the axis is truncated, which is why these are dots and not bars.</p>
+      <div class="plot"><div id="p-zip"></div><div class="tip" id="t-zip"></div></div>
+      <div class="tv scroller" id="tv-zip"></div>
+    </section>
+
+  </div>
+
+  <div class="caveats">
+    <h2>What this data will not tell you</h2>
+    <p style="margin:0;font-size:13px;color:var(--ink-2)">Everything above is real. These are the
+       things that would quietly mislead if they weren't stated.</p>
+    <ul id="caveat-list"></ul>
+  </div>
+
+  <p class="foot">
+    Built from LFCHD's published reports. <b>Unofficial</b> — not affiliated with or endorsed by the
+    Lexington-Fayette County Health Department. Always check
+    <a href="https://www.lfchd.org/food-protection/">the official source</a> for the current record.
+  </p>
+</main>
+
+<script type="module">
+import { data, fmt, el, h, css, tipper, openDetail, markNav, stampAsOf, band } from './assets/app.js';
+
+markNav(); stampAsOf();
+const D = await data('insights');
+
+/* ---------------- KPIs ---------------- */
+const H = D.headline, C = D.coverage;
+document.getElementById('kpis').append(...[
+  ['Inspections', fmt(H.inspections), `${fmt(H.scored)} carry a score`],
+  ['Establishments', fmt(H.establishments), `${fmt(D.metric_eligible)} have enough history to rank`],
+  ['Years covered', '21', 'dense from 2005 to 2025'],
+  ['Citations', fmt(H.violations_recorded), 'individual violations recorded'],
+].map(([l, v, s]) => h('div', { class: 'kpi' },
+  h('div', { class: 'lab' }, l), h('div', { class: 'val' }, v), h('div', { class: 'sub' }, s))));
+
+/* ---------------- table toggles ---------------- */
+document.querySelectorAll('.toggle').forEach(b => b.addEventListener('click', () => {
+  const c = document.getElementById(b.dataset.card);
+  b.textContent = c.classList.toggle('show-table') ? 'Chart' : 'Table';
+}));
+
+function table(host, cols, rows) {
+  const th = cols.map(c => `<th${c.num ? ' style="text-align:right"' : ''}>${c.t}</th>`).join('');
+  const tb = rows.map(r => '<tr>' + r.map((v, i) =>
+    `<td class="${cols[i].num ? 'num' : ''}${cols[i].mono ? ' mono' : ''}">${v}</td>`).join('') + '</tr>').join('');
+  document.getElementById(host).innerHTML = `<table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table>`;
+}
+
+/* Look a place up in establishments.json so a click from a chart opens the
+   same drawer the map and search pages use. */
+let placeIndex = null;
+async function openByPermit(p) {
+  if (!placeIndex) {
+    const e = await data('establishments');
+    placeIndex = Object.fromEntries(e.items.map(i => [i.p, i]));
+  }
+  if (placeIndex[p]) openDetail(placeIndex[p]);
+}
+
+/* ================= reputation gap scatter ================= */
+(function () {
+  const W = 1100, Ht = 470, M = { t: 16, r: 24, b: 50, l: 58 };
+  const pts = D.scatter;
+  const flagged = new Set(D.clean_now_bad_history.map(r => r.p));
+  const lo = Math.floor(Math.min(...pts.map(p => Math.min(p.x, p.y))) - 1);
+  const X = v => M.l + (v - lo) / (100.5 - lo) * (W - M.l - M.r);
+  const Y = v => Ht - M.b - (v - lo) / (100.5 - lo) * (Ht - M.t - M.b);
+
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img',
+    'aria-label': 'Most recent score versus time-weighted history score' });
+
+  for (let v = Math.ceil(lo / 5) * 5; v <= 100; v += 5) {
+    svg.append(el('line', { x1: X(v), x2: X(v), y1: M.t, y2: Ht - M.b, stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('text', { x: X(v), y: Ht - M.b + 20, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 12 }, v));
+    svg.append(el('text', { x: M.l - 10, y: Y(v) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12 }, v));
+  }
+
+  svg.append(el('line', { x1: X(lo), y1: Y(lo), x2: X(100), y2: Y(100), stroke: css('--axis'), 'stroke-width': 2 }));
+  svg.append(el('text', { x: X(100) - 6, y: Y(100) - 12, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 12.5 },
+    'today matches history'));
+
+  const g = el('g');
+  pts.forEach(p => g.append(el('circle', {
+    cx: X(p.x), cy: Y(p.y), r: 4,
+    fill: flagged.has(p.p) ? css('--critical') : css('--accent'),
+    'fill-opacity': flagged.has(p.p) ? 1 : .5
+  })));
+  svg.append(g);
+
+  svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Ht - M.b, y2: Ht - M.b, stroke: css('--axis'), 'stroke-width': 1 }));
+  svg.append(el('line', { x1: M.l, x2: M.l, y1: M.t, y2: Ht - M.b, stroke: css('--axis'), 'stroke-width': 1 }));
+  svg.append(el('text', { x: (M.l + W - M.r) / 2, y: Ht - 8, 'text-anchor': 'middle', fill: css('--ink-2'), 'font-size': 13 },
+    'Time-weighted history score →'));
+  svg.append(el('text', { x: -(M.t + Ht - M.b) / 2, y: 15, transform: 'rotate(-90)', 'text-anchor': 'middle',
+    fill: css('--ink-2'), 'font-size': 13 }, 'Most recent score →'));
+
+  const hit = el('rect', { x: M.l, y: M.t, width: W - M.l - M.r, height: Ht - M.t - M.b, fill: 'transparent', style: 'cursor:pointer' });
+  svg.append(hit);
+  document.getElementById('p-scatter').append(svg);
+
+  const tip = tipper(document.getElementById('t-scatter'), document.getElementById('p-scatter').parentElement);
+  let current = null;
+  function nearest(ev) {
+    const r = svg.getBoundingClientRect();
+    const sx = (ev.clientX - r.left) / r.width * W, sy = (ev.clientY - r.top) / r.height * Ht;
+    let best = null, bd = 1e9;
+    for (const p of pts) {
+      const d = (X(p.x) - sx) ** 2 + (Y(p.y) - sy) ** 2;
+      if (d < bd) { bd = d; best = p; }
+    }
+    return bd <= 900 ? { p: best, r } : null;
+  }
+  hit.addEventListener('mousemove', ev => {
+    const found = nearest(ev);
+    if (!found) { current = null; return tip.hide(); }
+    current = found.p;
+    const gap = (found.p.y - found.p.x).toFixed(1);
+    tip.show(
+      `<b>${found.p.name || 'Permit ' + found.p.p}</b><br>` +
+      `<span class="k">latest</span> <b>${found.p.y}</b> &nbsp; <span class="k">weighted</span> <b>${found.p.x}</b><br>` +
+      `<span class="k">gap</span> <b>${gap > 0 ? '+' : ''}${gap}</b> &nbsp; <span class="k">over</span> ${found.p.n} inspections`,
+      (X(found.p.x) / W) * found.r.width, (Y(found.p.y) / Ht) * found.r.height);
+  });
+  hit.addEventListener('mouseleave', () => { current = null; tip.hide(); });
+  hit.addEventListener('click', () => { if (current) openByPermit(current.p); });
+
+  table('tv-gap',
+    [{ t: 'Establishment' }, { t: 'Inspections', num: true }, { t: 'Latest', num: true },
+     { t: 'Weighted history', num: true }, { t: 'Gap', num: true }],
+    pts.slice().sort((a, b) => (b.y - b.x) - (a.y - a.x))
+       .map(p => [p.name, p.n, p.y, p.x, ((p.y - p.x) > 0 ? '+' : '') + (p.y - p.x).toFixed(1)]));
+})();
+
+/* ================= flagged dumbbell ================= */
+(function () {
+  const rows = D.clean_now_bad_history;
+  const W = 1100, rowH = 30, M = { t: 26, r: 152, b: 30, l: 302 };
+  const Ht = M.t + rows.length * rowH + M.b;
+  const lo = 80, hi = 101;
+  const X = v => M.l + (v - lo) / (hi - lo) * (W - M.l - M.r);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img',
+    'aria-label': 'Weighted history versus latest score for the widest gaps' });
+
+  for (let v = 80; v <= 100; v += 5) {
+    svg.append(el('line', { x1: X(v), x2: X(v), y1: M.t - 8, y2: Ht - M.b, stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('text', { x: X(v), y: M.t - 14, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 11.5 }, v));
+  }
+  rows.forEach((r, i) => {
+    const y = M.t + i * rowH + rowH / 2;
+    svg.append(el('text', { x: M.l - 14, y: y + 4, 'text-anchor': 'end', fill: css('--ink'), 'font-size': 13 },
+      r.name.length > 34 ? r.name.slice(0, 33) + '…' : r.name));
+    svg.append(el('line', { x1: X(r.weighted), x2: X(r.latest), y1: y, y2: y, stroke: css('--accent'),
+      'stroke-width': 2, 'stroke-opacity': .35, 'stroke-linecap': 'round' }));
+    svg.append(el('circle', { cx: X(r.weighted), cy: y, r: 5, fill: css('--critical') }));
+    svg.append(el('circle', { cx: X(r.latest), cy: y, r: 5, fill: css('--accent') }));
+    svg.append(el('text', { x: W - M.r + 14, y: y + 4, fill: css('--ink-2'), 'font-size': 12.5, class: 'mono' },
+      `${r.weighted} → ${r.latest}  (+${r.gap})`));
+    const hit = el('rect', { x: 0, y: y - rowH / 2, width: W, height: rowH, fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('click', () => openByPermit(r.p));
+    svg.append(hit);
+  });
+  svg.append(el('circle', { cx: M.l, cy: Ht - 8, r: 5, fill: css('--critical') }));
+  svg.append(el('text', { x: M.l + 12, y: Ht - 4, fill: css('--ink-2'), 'font-size': 12.5 }, 'weighted history'));
+  svg.append(el('circle', { cx: M.l + 150, cy: Ht - 8, r: 5, fill: css('--accent') }));
+  svg.append(el('text', { x: M.l + 162, y: Ht - 4, fill: css('--ink-2'), 'font-size': 12.5 }, 'latest score'));
+  document.getElementById('p-flag').append(svg);
+
+  table('tv-flag',
+    [{ t: 'Establishment' }, { t: 'Inspections', num: true }, { t: 'Weighted history', num: true },
+     { t: 'Latest', num: true }, { t: 'Gap', num: true }],
+    rows.map(r => [r.name, r.n, r.weighted, r.latest, '+' + r.gap]));
+})();
+
+/* ================= trend ================= */
+(function () {
+  const d = D.yearly, W = 560, Ht = 300, M = { t: 18, r: 46, b: 40, l: 42 };
+  const y0 = 90, y1 = 100.4;
+  const X = i => M.l + i / (d.length - 1) * (W - M.l - M.r);
+  const Y = v => Ht - M.b - (v - y0) / (y1 - y0) * (Ht - M.t - M.b);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img', 'aria-label': 'Median score by year' });
+
+  for (let v = 90; v <= 100; v += 2) {
+    svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('text', { x: M.l - 8, y: Y(v) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 11.5 }, v));
+  }
+  svg.append(el('path', {
+    d: d.map((r, i) => `${i ? 'L' : 'M'}${X(i)},${Y(r.q3)}`).join('') +
+       d.slice().reverse().map((r, j) => `L${X(d.length - 1 - j)},${Y(r.q1)}`).join('') + 'Z',
+    fill: css('--accent'), 'fill-opacity': .10 }));
+  svg.append(el('path', { d: d.map((r, i) => `${i ? 'L' : 'M'}${X(i)},${Y(r.median)}`).join(''),
+    fill: 'none', stroke: css('--accent'), 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+
+  const last = d[d.length - 1];
+  svg.append(el('circle', { cx: X(d.length - 1), cy: Y(last.median), r: 6, fill: css('--surface') }));
+  svg.append(el('circle', { cx: X(d.length - 1), cy: Y(last.median), r: 4, fill: css('--accent') }));
+  svg.append(el('text', { x: X(d.length - 1) + 9, y: Y(last.median) + 4, fill: css('--ink'),
+    'font-size': 12.5, 'font-weight': 620 }, last.median));
+  d.forEach((r, i) => { if (i % 4 === 0 || i === d.length - 1)
+    svg.append(el('text', { x: X(i), y: Ht - M.b + 18, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 11.5 }, r.year)); });
+  svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Ht - M.b, y2: Ht - M.b, stroke: css('--axis'), 'stroke-width': 1 }));
+
+  const hit = el('rect', { x: M.l, y: M.t, width: W - M.l - M.r, height: Ht - M.t - M.b, fill: 'transparent' });
+  svg.append(hit);
+  const cross = el('line', { y1: M.t, y2: Ht - M.b, stroke: css('--axis'), 'stroke-width': 1, opacity: 0 });
+  svg.append(cross);
+  document.getElementById('p-trend').append(svg);
+
+  const tip = tipper(document.getElementById('t-trend'), document.getElementById('p-trend').parentElement);
+  hit.addEventListener('mousemove', ev => {
+    const rc = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(d.length - 1,
+      Math.round(((ev.clientX - rc.left) / rc.width * W - M.l) / (W - M.l - M.r) * (d.length - 1))));
+    const r = d[i];
+    cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('opacity', 1);
+    tip.show(`<b>${r.year}</b><br><span class="k">median</span> <b>${r.median}</b> &nbsp; <span class="k">mean</span> <b>${r.mean}</b><br>` +
+             `<span class="k">middle half</span> ${r.q1}–${r.q3}<br><span class="k">inspections</span> ${fmt(r.n)}`,
+      (X(i) / W) * rc.width, (Y(r.median) / Ht) * rc.height);
+  });
+  hit.addEventListener('mouseleave', () => { cross.setAttribute('opacity', 0); tip.hide(); });
+  table('tv-trend', [{ t: 'Year', mono: true }, { t: 'Inspections', num: true }, { t: 'Median', num: true },
+    { t: 'Mean', num: true }, { t: '25th', num: true }, { t: '75th', num: true }],
+    d.map(r => [r.year, fmt(r.n), r.median, r.mean, r.q1, r.q3]));
+})();
+
+/* ================= distribution ================= */
+(function () {
+  const d = D.distribution, W = 560, Ht = 300, M = { t: 24, r: 16, b: 46, l: 52 };
+  const max = Math.max(...d.map(r => r.n)), bw = (W - M.l - M.r) / d.length;
+  const Y = v => Ht - M.b - v / max * (Ht - M.t - M.b);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img', 'aria-label': 'Score distribution' });
+  [0, 5000, 10000, 15000, 20000].forEach(v => {
+    svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('text', { x: M.l - 8, y: Y(v) + 4, 'text-anchor': 'end', fill: css('--ink-3'), 'font-size': 11.5 },
+      v ? (v / 1000) + 'k' : '0'));
+  });
+  const tip = tipper(document.getElementById('t-dist'), document.getElementById('p-dist').parentElement);
+  d.forEach((r, i) => {
+    const w = Math.min(24, bw - 8), x = M.l + i * bw + (bw - w) / 2, hgt = Math.max(2, Ht - M.b - Y(r.n));
+    svg.append(el('rect', { x, y: Y(r.n), width: w, height: hgt, rx: 4, fill: css('--accent') }));
+    svg.append(el('rect', { x, y: Ht - M.b - Math.min(4, hgt), width: w, height: Math.min(4, hgt), fill: css('--accent') }));
+    svg.append(el('text', { x: x + w / 2, y: Ht - M.b + 17, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 11 }, r.band));
+    const hit = el('rect', { x: M.l + i * bw, y: M.t, width: bw, height: Ht - M.t - M.b, fill: 'transparent' });
+    hit.addEventListener('mouseenter', () => {
+      const rc = svg.getBoundingClientRect();
+      tip.show(`<b>${r.band}</b><br><span class="k">inspections</span> <b>${fmt(r.n)}</b><br>` +
+               `<span class="k">share</span> ${(100 * r.n / D.headline.scored).toFixed(1)}%`,
+        ((x + w / 2) / W) * rc.width, (Y(r.n) / Ht) * rc.height);
+    });
+    hit.addEventListener('mouseleave', tip.hide);
+    svg.append(hit);
+  });
+  const b = d[d.length - 1];
+  svg.append(el('text', { x: M.l + (d.length - 1) * bw + bw / 2, y: Y(b.n) - 8, 'text-anchor': 'middle',
+    fill: css('--ink'), 'font-size': 12, 'font-weight': 620 }, fmt(b.n)));
+  svg.append(el('line', { x1: M.l, x2: W - M.r, y1: Ht - M.b, y2: Ht - M.b, stroke: css('--axis'), 'stroke-width': 1 }));
+  svg.append(el('text', { x: (M.l + W - M.r) / 2, y: Ht - 6, 'text-anchor': 'middle', fill: css('--ink-2'), 'font-size': 12.5 }, 'score band'));
+  document.getElementById('p-dist').append(svg);
+  table('tv-dist', [{ t: 'Band' }, { t: 'Inspections', num: true }, { t: 'Share', num: true }],
+    d.map(r => [r.band, fmt(r.n), (100 * r.n / D.headline.scored).toFixed(1) + '%']));
+})();
+
+/* ================= violations ================= */
+(function () {
+  const d = D.top_violations.slice(0, 12), W = 560, rowH = 29, M = { t: 8, r: 58, b: 10, l: 250 };
+  const Ht = M.t + d.length * rowH + M.b, max = Math.max(...d.map(r => r.n));
+  const X = v => v / max * (W - M.l - M.r);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht}`, role: 'img', 'aria-label': 'Most cited violations' });
+  const tip = tipper(document.getElementById('t-viol'), document.getElementById('p-viol').parentElement);
+  d.forEach((r, i) => {
+    const y = M.t + i * rowH, hgt = 14;
+    svg.append(el('text', { x: M.l - 12, y: y + hgt - 2, 'text-anchor': 'end', fill: css('--ink'), 'font-size': 12.5 },
+      r.text.length > 36 ? r.text.slice(0, 35) + '…' : r.text));
+    svg.append(el('rect', { x: M.l, y, width: Math.max(3, X(r.n)), height: hgt, rx: 4, fill: css('--accent') }));
+    svg.append(el('rect', { x: M.l, y, width: Math.min(4, X(r.n)), height: hgt, fill: css('--accent') }));
+    svg.append(el('text', { x: M.l + X(r.n) + 9, y: y + hgt - 2, fill: css('--ink-2'), 'font-size': 12, class: 'mono' }, fmt(r.n)));
+    const hit = el('rect', { x: 0, y: y - 5, width: W, height: rowH, fill: 'transparent' });
+    hit.addEventListener('mouseenter', () => {
+      const rc = svg.getBoundingClientRect();
+      tip.show(`<b>${r.text}</b><br><span class="k">code</span> <b class="mono">${r.code}</b> · <span class="k">${r.category}</span><br>` +
+               `<span class="k">citations</span> <b>${fmt(r.n)}</b>`,
+        ((M.l + X(r.n)) / W) * rc.width, ((y + hgt) / Ht) * rc.height);
+    });
+    hit.addEventListener('mouseleave', tip.hide);
+    svg.append(hit);
+  });
+  document.getElementById('p-viol').append(svg);
+  table('tv-viol', [{ t: 'Code', mono: true }, { t: 'Violation' }, { t: 'Category' }, { t: 'Citations', num: true }],
+    D.top_violations.map(r => [r.code, r.text, r.category, fmt(r.n)]));
+})();
+
+/* ================= by ZIP ================= */
+(function () {
+  const d = D.by_zip.slice().sort((a, b) => a.mean - b.mean);
+  const W = 560, rowH = 24, M = { t: 6, r: 66, b: 8, l: 74 };
+  const Ht = M.t + d.length * rowH + M.b, lo = 94.5, hi = 98.5;
+  const X = v => (v - lo) / (hi - lo) * (W - M.l - M.r);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${Ht + 22}`, role: 'img', 'aria-label': 'Mean score by ZIP' });
+  for (let v = 95; v <= 98; v++) {
+    svg.append(el('line', { x1: M.l + X(v), x2: M.l + X(v), y1: M.t - 2, y2: Ht - 2, stroke: css('--grid'), 'stroke-width': 1 }));
+    svg.append(el('text', { x: M.l + X(v), y: Ht + 12, 'text-anchor': 'middle', fill: css('--ink-3'), 'font-size': 11 }, v));
+  }
+  const tip = tipper(document.getElementById('t-zip'), document.getElementById('p-zip').parentElement);
+  d.forEach((r, i) => {
+    const y = M.t + i * rowH + 7;
+    svg.append(el('text', { x: M.l - 12, y: y + 4, 'text-anchor': 'end', fill: css('--ink'), 'font-size': 12.5, class: 'mono' }, r.zip));
+    svg.append(el('circle', { cx: M.l + X(r.mean), cy: y, r: 6, fill: css('--surface') }));
+    svg.append(el('circle', { cx: M.l + X(r.mean), cy: y, r: 4.5, fill: css('--accent') }));
+    svg.append(el('text', { x: W - M.r + 34, y: y + 4, 'text-anchor': 'end', fill: css('--ink-2'), 'font-size': 12, class: 'mono' },
+      r.mean.toFixed(2)));
+    const hit = el('rect', { x: 0, y: y - 12, width: W, height: rowH, fill: 'transparent' });
+    hit.addEventListener('mouseenter', () => {
+      const rc = svg.getBoundingClientRect();
+      tip.show(`<b class="mono">${r.zip}</b><br><span class="k">mean</span> <b>${r.mean}</b> · <span class="k">median</span> <b>${r.median}</b><br>` +
+               `<span class="k">${fmt(r.n)} inspections · ${r.establishments} places</span>`,
+        ((M.l + X(r.mean)) / W) * rc.width, (y / (Ht + 22)) * rc.height);
+    });
+    hit.addEventListener('mouseleave', tip.hide);
+    svg.append(hit);
+  });
+  svg.append(el('text', { x: (M.l + W - M.r) / 2, y: Ht + 22, 'text-anchor': 'middle', fill: css('--ink-2'), 'font-size': 12 },
+    'mean score (axis starts at 94.5)'));
+  document.getElementById('p-zip').append(svg);
+  table('tv-zip', [{ t: 'ZIP', mono: true }, { t: 'Places', num: true }, { t: 'Inspections', num: true },
+    { t: 'Mean', num: true }, { t: 'Median', num: true }],
+    d.map(r => [r.zip, r.establishments, fmt(r.n), r.mean, r.median]));
+})();
+
+/* ================= caveats ================= */
+document.getElementById('caveat-list').innerHTML = [
+  `<b>A score of 0 means "not scored," not a failing grade.</b> ${fmt(C.zero_sentinel_excluded)} inspections
+   carry a literal 0 — almost all complaint visits between 2005 and 2011, with no violations attached and
+   nothing recorded at all between 0 and 60. They are excluded from every average here. Counting them
+   would drag the all-time mean from 96.2 to 92.6 and make the 2000s look like a public-health crisis.`,
+  `<b>${fmt(C.geocoded)} of ${fmt(C.establishments_total)} establishments have coordinates.</b> The reports
+   carry no latitude or longitude, so these were geocoded from street addresses via the U.S. Census
+   geocoder. The rest either have no address on record or an address it could not match — those places
+   are absent from the map but present everywhere else.`,
+  `<b>${fmt(C.unscored_visits)} visits carry no score at all.</b> Mostly inspection type 12, which the
+   health department does not score. They are kept as real events, so any count of "inspections" runs
+   ahead of any count of "scores."`,
+  `<b>There is a gap from ${C.gap_start} to ${C.gap_end}.</b> No published report covers those ten weeks.`,
+  `<b>Ranking needs history.</b> Only ${fmt(D.metric_eligible)} of ${fmt(H.establishments)} establishments
+   have both 10+ scored inspections and a 2025 visit. A place with two inspections should not be ranked
+   against one with ninety-eight.`,
+  `<b>Establishments change names.</b> The permit number is the stable identifier; the name shown is the
+   most recent on record, so a long history may span more than one business at the same address.`,
+].map(i => `<li>${i}</li>`).join('');
+</script>
+</body>
+</html>

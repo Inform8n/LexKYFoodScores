@@ -287,6 +287,77 @@ Because LFCHD publishes new data only a couple of times a year, a long run of "n
 ### Manual Schedule
 You can also run manually whenever you want fresh data - the MD5 check prevents redundant processing.
 
+## The website
+
+`site/` is a static three-page site — no server, no database, no API. It reads
+pre-built JSON and is published to GitHub Pages by
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) whenever `site/` changes.
+
+| Page | What it does |
+|---|---|
+| `index.html` | Insights — the reputation gap, score trends, violations, ZIP breakdown |
+| `map.html` | Every geocoded establishment, coloured by latest score, weighted history, or the gap |
+| `search.html` | Search by name, street, ZIP or permit number |
+| `selftest.html` | Not linked from the site; checks the deployed data reconciles |
+
+Clicking anything anywhere opens the same drawer with the establishment's full
+inspection history back to 2005.
+
+### Rebuilding the site's data
+
+```bash
+python build_site_data.py
+```
+
+This runs automatically as step 4 of `run_pipeline.py`. It writes four files:
+
+| File | Size | Loaded |
+|---|---|---|
+| `establishments.json` | ~750 KB | every page |
+| `insights.json` | ~110 KB | insights page |
+| `geo.json` | ~26 KB | map page |
+| `inspections.json` | ~5.7 MB | lazily, on first detail view |
+
+`geo.json` holds the Fayette County and ZIP boundaries, simplified with
+Douglas-Peucker and rounded to four decimals. That is what lets the map render
+with no tile server and no external requests. It is fetched once and then left
+alone — boundaries don't change.
+
+### Previewing locally
+
+```bash
+python -m http.server 8765 --directory site
+```
+
+Then open <http://localhost:8765/>. A plain `file://` open will not work: the
+pages use ES modules and `fetch`, both of which need a real origin.
+
+### Geocoding
+
+The reports carry no coordinates, so `geocode_establishments.py` derives them
+from street addresses using the U.S. Census batch geocoder — free, no API key:
+
+```bash
+python geocode_establishments.py                 # first pass
+python geocode_establishments.py --retry-failed  # retry rejects with looser parsing
+```
+
+Results are cached in `geocode_cache.csv` so an address is only ever sent once.
+About 89% of establishments with a street address get coordinates; the rest are
+PO boxes, non-addresses, or addresses the Census TIGER data doesn't carry.
+
+A few dozen geocode to points **outside Fayette County** — farmers-market
+vendors, mobile units and out-of-county producers that LFCHD still permits.
+Those are correct, not errors, which is why the map frames itself on the county
+boundary rather than on the spread of the points.
+
+### Hosting note
+
+GitHub Pages can publish from a private repository only on **GitHub Pro, Team or
+Enterprise**; on a free personal account the repository must be public. Either
+way the published site is public — restricting who can view a Pages site is an
+Enterprise Cloud feature.
+
 ## Data Source
 
 Data is sourced from the [Lexington-Fayette County Health Department food protection page](https://www.lfchd.org/food-protection/).

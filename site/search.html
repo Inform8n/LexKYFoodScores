@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search — Lexington Food Inspections</title>
+<meta name="description" content="Search 20 years of Lexington food inspection records by name, address, ZIP or permit number.">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🍽️</text></svg>">
+<style>
+  .searchbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .searchbar input[type="search"] { flex: 1 1 320px; font-size: 15px; padding: 10px 13px; }
+  mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
+  td.name { white-space: normal; min-width: 220px; font-weight: 550; }
+  td.addr { color: var(--ink-2); font-size: 12.5px; white-space: normal; }
+  .results { max-height: 620px; overflow: auto; }
+  .hintrow { font-size: 12.5px; color: var(--ink-3); margin-bottom: 16px; }
+  .hintrow b { color: var(--ink-2); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="topbar"><div class="inner">
+  <a class="brand" href="index.html">Lexington Food Scores <span>· unofficial</span></a>
+  <nav><a href="index.html">Insights</a><a href="map.html">Map</a><a href="search.html">Search</a></nav>
+  <div class="asof"></div>
+</div></header>
+
+<main class="wrap">
+  <div class="page-head">
+    <p class="eyebrow">Every establishment on record</p>
+    <h1>Look up a place</h1>
+    <p>Search by name, street, ZIP or permit number. Click any row for its full
+       inspection history back to 2005.</p>
+  </div>
+
+  <div class="searchbar">
+    <input type="search" id="q" placeholder="Try “china”, “nicholasville”, “40503”…"
+           autocomplete="off" spellcheck="false" aria-label="Search establishments">
+    <label class="ctl">Min inspections
+      <select id="minn"><option value="1">1</option><option value="5">5</option>
+        <option value="10">10</option><option value="20">20</option></select>
+    </label>
+    <div class="seg" role="group" aria-label="Quick filters">
+      <button data-f="all" aria-pressed="true">All</button>
+      <button data-f="gap" aria-pressed="false">Biggest gap</button>
+      <button data-f="low" aria-pressed="false">Lowest history</button>
+    </div>
+  </div>
+  <p class="hintrow" id="hint"></p>
+
+  <div class="card" style="padding:0">
+    <div class="results scroller">
+      <table id="tbl">
+        <thead><tr>
+          <th class="sortable" data-k="n">Establishment <span class="arrow"></span></th>
+          <th class="sortable" data-k="z">ZIP <span class="arrow"></span></th>
+          <th class="sortable num" data-k="c" style="text-align:right">Inspections <span class="arrow"></span></th>
+          <th class="sortable num" data-k="l" style="text-align:right">Latest <span class="arrow"></span></th>
+          <th class="sortable num" data-k="w" style="text-align:right">History <span class="arrow"></span></th>
+          <th class="sortable num" data-k="gap" style="text-align:right">Gap <span class="arrow"></span></th>
+          <th class="sortable num" data-k="t" style="text-align:right">Last seen <span class="arrow"></span></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden>No establishment matches that search.</div>
+    </div>
+  </div>
+
+  <p class="foot">
+    <b>Unofficial</b> — built from LFCHD's published reports, not affiliated with or endorsed by the
+    Lexington-Fayette County Health Department. A score is a snapshot of one visit, not a verdict
+    on a business.
+  </p>
+</main>
+
+<script type="module">
+import { data, fmt, h, openDetail, markNav, stampAsOf, band } from './assets/app.js';
+
+markNav(); stampAsOf();
+const E = await data('establishments');
+const all = E.items.map(p => ({ ...p, gap: (p.l === null || p.w === null) ? null : +(p.l - p.w).toFixed(1) }));
+
+const qEl = document.getElementById('q');
+const rowsEl = document.getElementById('rows');
+const emptyEl = document.getElementById('empty');
+const hintEl = document.getElementById('hint');
+
+let sort = { k: 'c', dir: -1 }, filter = 'all';
+const LIMIT = 300;
+
+const norm = s => (s || '').toString().toLowerCase();
+function match(p, terms) {
+  if (!terms.length) return true;
+  const hay = `${norm(p.n)} ${norm(p.a)} ${p.z || ''} ${p.p}`;
+  return terms.every(t => hay.includes(t));
+}
+
+function highlight(text, terms) {
+  if (!text) return '';
+  if (!terms.length) return text;
+  let out = text, lower = norm(text);
+  const spans = [];
+  terms.forEach(t => {
+    let i = lower.indexOf(t);
+    while (i !== -1) { spans.push([i, i + t.length]); i = lower.indexOf(t, i + t.length); }
+  });
+  if (!spans.length) return text;
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged = [spans[0]];
+  spans.slice(1).forEach(s => {
+    const last = merged[merged.length - 1];
+    if (s[0] <= last[1]) last[1] = Math.max(last[1], s[1]); else merged.push(s);
+  });
+  out = '';
+  let cur = 0;
+  merged.forEach(([a, b]) => {
+    out += escapeHtml(text.slice(cur, a)) + '<mark>' + escapeHtml(text.slice(a, b)) + '</mark>';
+    cur = b;
+  });
+  return out + escapeHtml(text.slice(cur));
+}
+const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function render() {
+  const terms = norm(qEl.value).split(/\s+/).filter(Boolean);
+  const minn = +document.getElementById('minn').value;
+  let list = all.filter(p => p.c >= minn && match(p, terms));
+
+  if (filter === 'gap') list = list.filter(p => p.gap !== null && p.c >= 10);
+  if (filter === 'low') list = list.filter(p => p.w !== null && p.c >= 10);
+
+  const k = sort.k;
+  list.sort((a, b) => {
+    let x = a[k], y = b[k];
+    if (x === null || x === undefined) return 1;
+    if (y === null || y === undefined) return -1;
+    if (typeof x === 'string') return x.localeCompare(y) * sort.dir;
+    return (x - y) * sort.dir;
+  });
+
+  const total = list.length;
+  const page = list.slice(0, LIMIT);
+  rowsEl.innerHTML = '';
+  page.forEach(p => {
+    const tr = h('tr', { tabindex: '0', onclick: () => openDetail(p),
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(p); } } });
+    tr.innerHTML =
+      `<td class="name">${highlight(p.n, terms) || '<span style="color:var(--ink-3)">Permit ' + p.p + '</span>'}` +
+        `<div class="addr">${highlight([p.a, p.z].filter(Boolean).join(', '), terms) || 'no address on record'}</div></td>` +
+      `<td class="mono">${p.z || '—'}</td>` +
+      `<td class="num">${fmt(p.c)}</td>` +
+      `<td class="num"><span class="pill ${band(p.l)}">${p.l ?? '—'}</span></td>` +
+      `<td class="num">${p.w ?? '—'}</td>` +
+      `<td class="num">${p.gap === null ? '—' : (p.gap > 0 ? '+' : '') + p.gap}</td>` +
+      `<td class="num mono">${p.t}</td>`;
+    rowsEl.append(tr);
+  });
+
+  emptyEl.hidden = total > 0;
+  hintEl.innerHTML = total
+    ? `Showing <b>${fmt(page.length)}</b> of <b>${fmt(total)}</b> matching establishments` +
+      (total > LIMIT ? ' — narrow the search to see the rest.' : '.')
+    : '';
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.querySelector('.arrow').textContent = th.dataset.k === sort.k ? (sort.dir === 1 ? '▲' : '▼') : '';
+  });
+}
+
+qEl.addEventListener('input', render);
+document.getElementById('minn').addEventListener('change', render);
+document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.k;
+  sort = { k, dir: sort.k === k ? -sort.dir : (k === 'n' || k === 'z' ? 1 : -1) };
+  render();
+}));
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  if (filter === 'gap') sort = { k: 'gap', dir: -1 };
+  if (filter === 'low') sort = { k: 'w', dir: 1 };
+  if (filter === 'all') sort = { k: 'c', dir: -1 };
+  render();
+}));
+
+// Deep link: search.html?q=china
+const params = new URLSearchParams(location.search);
+if (params.get('q')) qEl.value = params.get('q');
+render();
+qEl.focus();
+</script>
+</body>
+</html>

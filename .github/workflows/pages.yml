@@ -1,0 +1,54 @@
+name: Deploy site to GitHub Pages
+
+# Publishes the contents of site/ — which is already static, so there is no
+# build step. Only the built artifact is uploaded, so nothing else in the repo
+# is exposed if the repository itself is private.
+#
+# Note: publishing Pages from a PRIVATE repository requires GitHub Pro, Team or
+# Enterprise. On a free personal account the repository has to be public for
+# this workflow to publish. The site itself is public either way.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the data files the site needs are present
+        run: |
+          missing=0
+          for f in establishments.json inspections.json insights.json geo.json; do
+            if [ ! -s "site/data/$f" ]; then
+              echo "::error::site/data/$f is missing or empty — run build_site_data.py"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map — Lexington Food Inspections</title>
+<meta name="description" content="Every geocoded Lexington food establishment, coloured by its latest score, its time-weighted history, or the gap between them.">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🍽️</text></svg>">
+<style>
+  .maprow { display: grid; grid-template-columns: 1fr 300px; gap: 19px; align-items: start; }
+  @media (max-width: 900px) { .maprow { grid-template-columns: 1fr; } }
+  .mapcard { padding: 0; overflow: hidden; position: relative; }
+  #cv { display: block; width: 100%; height: 620px; cursor: grab; touch-action: none; }
+  #cv.drag { cursor: grabbing; }
+  @media (max-width: 620px) { #cv { height: 460px; } }
+  .maptip { position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface); border: 1px solid var(--axis); border-radius: 7px; padding: 8px 11px;
+    font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow); z-index: 20; max-width: 260px; }
+  .maptip b { font-weight: 640; } .maptip .k { color: var(--ink-3); }
+  .zoomctl { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
+  .zoomctl button { width: 32px; height: 32px; font: inherit; font-size: 17px; line-height: 1;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 8px;
+    cursor: pointer; box-shadow: var(--shadow); }
+  .zoomctl button:hover { background: var(--surface-2); }
+  .legend { font-size: 12.5px; }
+  .legend .ramp { height: 12px; border-radius: 3px; margin: 8px 0 5px; }
+  .legend .ends { display: flex; justify-content: space-between; color: var(--ink-3); font-size: 11.5px; }
+  .legend .swatches { display: grid; gap: 7px; margin-top: 12px; }
+  .legend .sw { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
+  .legend .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .side h3 { margin: 0 0 3px; font-size: 13px; font-weight: 640; }
+  .side p { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-2); }
+</style>
+</head>
+<body>
+
+<header class="topbar"><div class="inner">
+  <a class="brand" href="index.html">Lexington Food Scores <span>· unofficial</span></a>
+  <nav><a href="index.html">Insights</a><a href="map.html">Map</a><a href="search.html">Search</a></nav>
+  <div class="asof"></div>
+</div></header>
+
+<main class="wrap">
+  <div class="page-head">
+    <p class="eyebrow">Fayette County</p>
+    <h1>Where the scores are</h1>
+    <p>Every establishment we could place. Drag to pan, scroll or pinch to zoom, click a point
+       for its full inspection history.</p>
+  </div>
+
+  <div class="controls">
+    <label class="ctl">Colour by
+      <select id="metric">
+        <option value="l">Latest score</option>
+        <option value="w">Weighted history</option>
+        <option value="g">Gap (latest − history)</option>
+      </select>
+    </label>
+    <label class="ctl">ZIP
+      <select id="zipf"><option value="">All</option></select>
+    </label>
+    <label class="ctl">Min inspections
+      <select id="minn">
+        <option value="1">1</option><option value="5">5</option>
+        <option value="10">10</option><option value="20">20</option>
+      </select>
+    </label>
+    <button class="toggle" id="showzips" aria-pressed="true" style="margin-left:0">ZIP outlines</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="maprow">
+    <div class="card mapcard">
+      <canvas id="cv"></canvas>
+      <div class="maptip" id="tip"></div>
+      <div class="zoomctl">
+        <button id="zin" aria-label="Zoom in">+</button>
+        <button id="zout" aria-label="Zoom out">−</button>
+        <button id="zreset" aria-label="Reset view" style="font-size:12px">⤢</button>
+      </div>
+    </div>
+
+    <div class="card side">
+      <div class="legend">
+        <h3 id="legend-title">Latest score</h3>
+        <p id="legend-note"></p>
+        <div class="ramp" id="ramp"></div>
+        <div class="ends"><span id="lo"></span><span id="mid"></span><span id="hi"></span></div>
+        <div class="swatches">
+          <div class="sw"><span class="dot" style="background:var(--ink-3);opacity:.35"></span> no score on record</div>
+        </div>
+      </div>
+      <hr style="border:0;border-top:1px solid var(--rule);margin:18px 0">
+      <h3>What you're looking at</h3>
+      <p id="geonote"></p>
+      <h3>Reading the colour</h3>
+      <p>The scale diverges around the typical score, so a point only looks alarming when it is
+         genuinely below the city's own norm — not merely below 100.</p>
+    </div>
+  </div>
+
+  <p class="foot">
+    Coordinates from the U.S. Census geocoder, applied to LFCHD street addresses. Boundaries from
+    Census TIGER. <b>Unofficial</b> — not affiliated with the Lexington-Fayette County Health Department.
+  </p>
+</main>
+
+<script type="module">
+import { data, fmt, h, css, openDetail, markNav, stampAsOf } from './assets/app.js';
+
+markNav(); stampAsOf();
+
+const [E, GEO] = await Promise.all([data('establishments'), data('geo')]);
+const places = E.items.filter(p => p.lat !== null && p.lon !== null);
+
+/* ---------------- projection ----------------
+   Equirectangular with a cos(lat) correction — at city scale the distortion is
+   far below a pixel, and it keeps the whole thing dependency-free. */
+const lat0 = places.reduce((a, p) => a + p.lat, 0) / places.length;
+const K = Math.cos(lat0 * Math.PI / 180);
+const px = p => [p.lon * K, -p.lat];
+
+/* Frame on the county, NOT on the points. LFCHD permits farmers-market vendors,
+   mobile units and out-of-state producers whose real addresses sit in other
+   counties (and a couple in other states); letting those set the bounds squeezes
+   all of Lexington into a smudge. They stay in the data and in search — they are
+   just off the edge of this map. */
+const bounds = (() => {
+  const xs = [], ys = [];
+  (GEO.county || []).forEach(r => r.forEach(([lon, lat]) => { xs.push(lon * K); ys.push(-lat); }));
+  if (!xs.length) places.forEach(p => { const [x, y] = px(p); xs.push(x); ys.push(y); });
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+})();
+
+const inFrame = places.filter(p => {
+  const [x, y] = px(p);
+  return x >= bounds.x0 && x <= bounds.x1 && y >= bounds.y0 && y <= bounds.y1;
+});
+const offMap = places.length - inFrame.length;
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let view = { s: 1, tx: 0, ty: 0 };   // zoom + pan on top of the fit transform
+let fit = { s: 1, tx: 0, ty: 0 };
+let W = 0, Ht = 0;
+
+function resize() {
+  const r = cv.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; Ht = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Ht * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pad = 26;
+  const sx = (W - pad * 2) / (bounds.x1 - bounds.x0);
+  const sy = (Ht - pad * 2) / (bounds.y1 - bounds.y0);
+  fit.s = Math.min(sx, sy);
+  fit.tx = (W - (bounds.x1 - bounds.x0) * fit.s) / 2 - bounds.x0 * fit.s;
+  fit.ty = (Ht - (bounds.y1 - bounds.y0) * fit.s) / 2 - bounds.y0 * fit.s;
+  draw();
+}
+const toScreen = (x, y) => [
+  (x * fit.s + fit.tx) * view.s + view.tx,
+  (y * fit.s + fit.ty) * view.s + view.ty,
+];
+
+/* ---------------- colour ----------------
+   Diverging blue<->red with a neutral midpoint: red reads as "below the norm",
+   blue as "above", and the grey middle as "unremarkable". */
+const RED = [208, 59, 59], MID = [170, 168, 160], BLUE = [42, 120, 214];
+function ramp(t) {
+  t = Math.max(0, Math.min(1, t));
+  const [a, b, u] = t < .5 ? [RED, MID, t * 2] : [MID, BLUE, (t - .5) * 2];
+  return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * u)).join(',')})`;
+}
+
+const METRICS = {
+  l: { label: 'Latest score', lo: 88, mid: 96, hi: 100, get: p => p.l,
+       note: 'The single most recent scored inspection.' },
+  w: { label: 'Weighted history', lo: 88, mid: 96, hi: 100, get: p => p.w,
+       note: 'Every inspection, with a two-year half-life so recent ones weigh most.' },
+  g: { label: 'Gap (latest − history)', lo: -6, mid: 0, hi: 6, get: p => (p.l === null || p.w === null ? null : p.l - p.w),
+       note: 'Blue means today beats the record; red means today is worse than the record.' },
+};
+let metric = 'l', showZips = true;
+
+function tOf(m, v) {
+  if (v === null || v === undefined) return null;
+  const M = METRICS[m];
+  return v <= M.mid ? (v - M.lo) / (M.mid - M.lo) * .5
+                    : .5 + (v - M.mid) / (M.hi - M.mid) * .5;
+}
+
+/* ---------------- filters ---------------- */
+const zipSel = document.getElementById('zipf');
+[...new Set(places.map(p => p.z).filter(Boolean))].sort()
+  .forEach(z => zipSel.append(h('option', { value: z }, z)));
+
+function visible() {
+  const z = zipSel.value, mn = +document.getElementById('minn').value;
+  return places.filter(p => (!z || p.z === z) && p.c >= mn);
+}
+
+/* ---------------- draw ---------------- */
+let shown = [];
+function draw() {
+  ctx.clearRect(0, 0, W, Ht);
+
+  // land: the county, so points have something to sit on
+  ctx.beginPath();
+  (GEO.county || []).forEach(ring => {
+    ring.forEach(([lon, lat], i) => {
+      const [x, y] = toScreen(lon * K, -lat);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.closePath();
+  });
+  ctx.fillStyle = css('--land'); ctx.fill();
+  ctx.strokeStyle = css('--land-edge'); ctx.lineWidth = 1.5; ctx.stroke();
+
+  if (showZips) {
+    ctx.strokeStyle = css('--land-edge'); ctx.globalAlpha = .55; ctx.lineWidth = 1;
+    (GEO.zips || []).forEach(z => z.rings.forEach(ring => {
+      ctx.beginPath();
+      ring.forEach(([lon, lat], i) => {
+        const [x, y] = toScreen(lon * K, -lat);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.closePath(); ctx.stroke();
+    }));
+    ctx.globalAlpha = 1;
+  }
+
+  shown = visible();
+  const r = Math.max(2.6, Math.min(6, 3.1 * Math.sqrt(view.s)));
+  const surface = css('--surface');
+  shown.forEach(p => {
+    const [x, y] = toScreen(...px(p));
+    if (x < -20 || x > W + 20 || y < -20 || y > Ht + 20) return;
+    const t = tOf(metric, METRICS[metric].get(p));
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.284);
+    ctx.fillStyle = t === null ? css('--ink-3') : ramp(t);
+    ctx.globalAlpha = t === null ? .35 : .85;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (view.s > 2.2) { ctx.lineWidth = 1; ctx.strokeStyle = surface; ctx.stroke(); }
+  });
+
+  document.getElementById('count').textContent =
+    `${fmt(shown.length)} of ${fmt(places.length)} mapped places`;
+}
+
+/* ---------------- interaction ---------------- */
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+  cv.setPointerCapture(e.pointerId); cv.classList.add('drag');
+});
+cv.addEventListener('pointerup', e => {
+  cv.classList.remove('drag');
+  if (drag && !drag.moved) clickAt(e);
+  drag = null;
+});
+cv.addEventListener('pointerleave', () => { drag = null; cv.classList.remove('drag'); tip.style.opacity = 0; });
+
+const tip = document.getElementById('tip');
+cv.addEventListener('pointermove', e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    view.tx = drag.tx + dx; view.ty = drag.ty + dy;
+    tip.style.opacity = 0;
+    return draw();
+  }
+  const hitP = pick(e);
+  if (!hitP) { tip.style.opacity = 0; return; }
+  const r = cv.getBoundingClientRect();
+  const g = (hitP.l !== null && hitP.w !== null) ? (hitP.l - hitP.w).toFixed(1) : null;
+  tip.innerHTML = `<b>${hitP.n || 'Permit ' + hitP.p}</b><br>` +
+    `<span class="k">${hitP.a || 'no address'}${hitP.z ? ' · ' + hitP.z : ''}</span><br>` +
+    `<span class="k">latest</span> <b>${hitP.l ?? '—'}</b> · <span class="k">history</span> <b>${hitP.w ?? '—'}</b>` +
+    (g !== null ? ` · <span class="k">gap</span> <b>${g > 0 ? '+' : ''}${g}</b>` : '') +
+    `<br><span class="k">${fmt(hitP.c)} scored inspections</span>`;
+  tip.style.opacity = 1;
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  tip.style.left = Math.min(x + 14, r.width - tip.offsetWidth - 6) + 'px';
+  tip.style.top = Math.max(4, y - tip.offsetHeight - 12) + 'px';
+});
+
+function pick(e) {
+  const r = cv.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = null, bd = 14 * 14;
+  for (const p of shown) {
+    const [x, y] = toScreen(...px(p));
+    const d = (x - mx) ** 2 + (y - my) ** 2;
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+function clickAt(e) { const p = pick(e); if (p) openDetail(p); }
+
+function zoomAt(factor, cx, cy) {
+  const ns = Math.max(1, Math.min(40, view.s * factor));
+  const k = ns / view.s;
+  view.tx = cx - (cx - view.tx) * k;
+  view.ty = cy - (cy - view.ty) * k;
+  view.s = ns;
+  if (view.s === 1) { view.tx = 0; view.ty = 0; }
+  draw();
+}
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+
+document.getElementById('zin').onclick = () => zoomAt(1.4, W / 2, Ht / 2);
+document.getElementById('zout').onclick = () => zoomAt(1 / 1.4, W / 2, Ht / 2);
+document.getElementById('zreset').onclick = () => { view = { s: 1, tx: 0, ty: 0 }; draw(); };
+
+document.getElementById('metric').onchange = e => { metric = e.target.value; updateLegend(); draw(); };
+zipSel.onchange = draw;
+document.getElementById('minn').onchange = draw;
+document.getElementById('showzips').onclick = e => {
+  showZips = !showZips;
+  e.target.setAttribute('aria-pressed', String(showZips));
+  draw();
+};
+
+function updateLegend() {
+  const M = METRICS[metric];
+  document.getElementById('legend-title').textContent = M.label;
+  document.getElementById('legend-note').textContent = M.note;
+  const stops = [];
+  for (let i = 0; i <= 10; i++) stops.push(ramp(i / 10));
+  document.getElementById('ramp').style.background = `linear-gradient(90deg, ${stops.join(',')})`;
+  document.getElementById('lo').textContent = M.lo <= 0 ? M.lo : M.lo + ' or below';
+  document.getElementById('mid').textContent = String(M.mid);
+  document.getElementById('hi').textContent = M.hi >= 100 ? '100' : '+' + M.hi;
+}
+
+document.getElementById('geonote').innerHTML =
+  `${fmt(places.length)} of ${fmt(E.items.length)} establishments have coordinates. The rest either ` +
+  `carry no street address in LFCHD's reports or an address the Census geocoder could not match — ` +
+  `they appear in search but not here.` +
+  (offMap ? ` A further <b>${fmt(offMap)}</b> sit outside Fayette County altogether — farmers-market
+     vendors, mobile units and out-of-county producers that LFCHD still permits — so they fall
+     beyond the frame.` : '');
+
+updateLegend();
+new ResizeObserver(resize).observe(cv);
+resize();
+</script>
+</body>
+</html>

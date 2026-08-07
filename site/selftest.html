@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Self test</title></head>
+<body><pre id="out">running…</pre>
+<script type="module">
+import { data } from './assets/app.js';
+const lines = [];
+const ok = (label, pass, extra = '') => lines.push(`${pass ? 'PASS' : 'FAIL'}  ${label}${extra ? '  — ' + extra : ''}`);
+
+try {
+  const I = await data('insights');
+  const E = await data('establishments');
+  const H = await data('inspections');
+
+  const named = I.scatter.filter(p => p.name && p.name.trim()).length;
+  ok('every scatter point has a name', named === I.scatter.length, `${named}/${I.scatter.length}`);
+  ok('every scatter point has a permit', I.scatter.every(p => p.p), '');
+  ok('flagged rows carry permits', I.clean_now_bad_history.every(r => r.p), '');
+
+  const withGeo = E.items.filter(p => p.lat !== null).length;
+  ok('establishments load', E.items.length > 4000, `${E.items.length} places, ${withGeo} geocoded`);
+  ok('as-of stamp present', !!E.asof, E.asof);
+
+  // the drawer path: pick a scatter point, resolve it, fetch its history
+  const sample = I.scatter[0];
+  const place = E.items.find(x => x.p === sample.p);
+  ok('scatter point resolves to an establishment', !!place, sample.name);
+  const hist = H[sample.p];
+  ok('history exists for that permit', Array.isArray(hist) && hist.length > 0,
+     `${hist ? hist.length : 0} inspections`);
+  ok('history rows are shaped right', !!hist && hist.every(r => 'd' in r && 's' in r && 'v' in r));
+
+  const codes = I.codes || {};
+  ok('violation code lookup present', Object.keys(codes).length > 40, `${Object.keys(codes).length} codes`);
+  const anyCode = hist.flatMap(r => r.v)[0];
+  ok('a cited code resolves to text', !anyCode || !!codes[anyCode],
+      anyCode ? `${anyCode} = ${codes[anyCode]?.t}` : 'no codes on sample');
+
+  const totalHist = Object.values(H).reduce((a, v) => a + v.length, 0);
+  ok('inspection totals line up', totalHist === I.headline.inspections,
+     `${totalHist} vs ${I.headline.inspections}`);
+  const acct = I.headline.scored + I.coverage.unscored_visits + I.coverage.zero_sentinel_excluded;
+  ok('score accounting reconciles', acct === I.headline.inspections, `${acct} = ${I.headline.inspections}`);
+} catch (e) {
+  lines.push('FAIL  threw: ' + e.message);
+}
+document.getElementById('out').textContent = lines.join('\n') +
+  `\n\n${lines.filter(l => l.startsWith('PASS')).length}/${lines.length} passed`;
+</script>
+</body></html>
