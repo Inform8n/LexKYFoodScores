@@ -31,6 +31,19 @@
   .legend .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
   .side h3 { margin: 0 0 3px; font-size: 13px; font-weight: 640; }
   .side p { margin: 0 0 14px; font-size: 12.5px; color: var(--ink-2); }
+  .toggle.locate { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+  .toggle.locate[aria-busy="true"] { opacity: .6; }
+  .locmsg { margin: -6px 0 16px; font-size: 12.5px; color: var(--ink-2);
+            border-left: 2px solid var(--axis); padding-left: 10px; }
+  .locmsg.warn { border-left-color: var(--warning); }
+  .locmsg b { color: var(--ink); font-weight: 600; }
+  .nearlist { display: grid; gap: 8px; margin: 0 0 14px; }
+  .nearlist button { display: block; width: 100%; text-align: left; font: inherit;
+    background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 7px 0;
+    cursor: pointer; color: var(--ink); }
+  .nearlist button:hover { background: var(--accent-soft); }
+  .nearlist .nm { font-size: 13px; font-weight: 550; }
+  .nearlist .mt { font-size: 11.5px; color: var(--ink-3); }
 </style>
 </head>
 <body>
@@ -67,8 +80,10 @@
       </select>
     </label>
     <button class="toggle" id="showzips" aria-pressed="true" style="margin-left:0">ZIP outlines</button>
+    <button class="toggle locate" id="locate" style="margin-left:0">📍 Near me</button>
     <span class="count" id="count"></span>
   </div>
+  <p class="locmsg" id="locmsg" hidden></p>
 
   <div class="maprow">
     <div class="card mapcard">
@@ -92,6 +107,11 @@
         </div>
       </div>
       <hr style="border:0;border-top:1px solid var(--rule);margin:18px 0">
+      <div id="nearbox" hidden>
+        <h3>Closest to you</h3>
+        <div class="nearlist" id="nearlist"></div>
+        <hr style="border:0;border-top:1px solid var(--rule);margin:0 0 16px">
+      </div>
       <h3>What you're looking at</h3>
       <p id="geonote"></p>
       <h3>Reading the colour</h3>
@@ -280,9 +300,133 @@ function draw() {
     if (view.s > 2.2) { ctx.lineWidth = 1; ctx.strokeStyle = surface; ctx.stroke(); }
   });
 
+  drawUser();   // on top of the data — it is where you are, not a reading
+
   document.getElementById('count').textContent =
     `${fmt(shown.length)} of ${fmt(places.length)} mapped places`;
 }
+
+/* ---------------- your location ----------------
+   Drawn as a ring, deliberately not a filled dot in the score ramp: a blue dot
+   would read as "this establishment scored well". Ink-coloured with a surface
+   halo, so it cannot be mistaken for data. */
+let userLoc = null;   // {lat, lon, acc}
+
+function drawUser() {
+  if (!userLoc) return;
+  const [x, y] = toScreen(userLoc.lon * K, -userLoc.lat);
+
+  // Accuracy radius, converted from metres through the same projection.
+  if (userLoc.acc) {
+    const degLat = userLoc.acc / 111320;
+    const [, y2] = toScreen(userLoc.lon * K, -(userLoc.lat + degLat));
+    const rp = Math.abs(y2 - y);
+    if (rp > 3) {
+      ctx.beginPath(); ctx.arc(x, y, rp, 0, 6.284);
+      ctx.fillStyle = css('--accent'); ctx.globalAlpha = .10; ctx.fill();
+      ctx.globalAlpha = .45; ctx.lineWidth = 1; ctx.strokeStyle = css('--accent'); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.284);
+  ctx.strokeStyle = css('--surface'); ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.284);
+  ctx.strokeStyle = css('--ink'); ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 6.284);
+  ctx.fillStyle = css('--ink'); ctx.fill();
+}
+
+// Great-circle distance in miles — good enough at city scale and honest at any.
+function milesBetween(lat1, lon1, lat2, lon2) {
+  const R = 3958.8, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+const locBtn = document.getElementById('locate');
+const locMsg = document.getElementById('locmsg');
+function setLocMsg(html, warn = false) {
+  locMsg.innerHTML = html;
+  locMsg.hidden = !html;
+  locMsg.classList.toggle('warn', warn);
+}
+
+function showNearest(lat, lon) {
+  const withDist = places
+    .map(p => ({ p, mi: milesBetween(lat, lon, p.lat, p.lon) }))
+    .sort((a, b) => a.mi - b.mi)
+    .slice(0, 8);
+
+  const list = document.getElementById('nearlist');
+  list.innerHTML = '';
+  withDist.forEach(({ p, mi }) => {
+    const b = h('button', { type: 'button', onclick: () => openDetail(p) },
+      h('div', { class: 'nm' }, p.n || `Permit ${p.p}`),
+      h('div', { class: 'mt' },
+        `${mi < 0.2 ? Math.round(mi * 5280) + ' ft' : mi.toFixed(1) + ' mi'} away` +
+        (p.l !== null ? ` · latest ${p.l}` : '') +
+        (p.w !== null ? ` · history ${p.w}` : '')));
+    list.append(b);
+  });
+  document.getElementById('nearbox').hidden = withDist.length === 0;
+  return withDist[0];
+}
+
+function locateMe() {
+  if (!navigator.geolocation) {
+    return setLocMsg('This browser does not offer location services.', true);
+  }
+  if (!window.isSecureContext) {
+    return setLocMsg('Location needs a secure (https) connection.', true);
+  }
+  locBtn.setAttribute('aria-busy', 'true');
+  locBtn.textContent = 'Locating…';
+  setLocMsg('Waiting for your device…');
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    locBtn.removeAttribute('aria-busy');
+    locBtn.textContent = '📍 Near me';
+    const { latitude: lat, longitude: lon, accuracy: acc } = pos.coords;
+    userLoc = { lat, lon, acc };
+    DBG.log(`located ${lat.toFixed(4)},${lon.toFixed(4)} ±${Math.round(acc)}m`);
+
+    const nearest = showNearest(lat, lon);
+    const [ux, uy] = px({ lat, lon });
+    const inCounty = ux >= bounds.x0 && ux <= bounds.x1 && uy >= bounds.y0 && uy <= bounds.y1;
+
+    if (inCounty) {
+      // Centre on the fix at a neighbourhood-level zoom.
+      applyZoom(6, W / 2, Ht / 2);
+      const [sx, sy] = toScreen(ux, uy);
+      view.tx += W / 2 - sx; view.ty += Ht / 2 - sy;
+      draw();
+      setLocMsg(`Centred on your location, accurate to about
+        <b>${acc < 1609 ? Math.round(acc) + ' m' : (acc / 1609).toFixed(1) + ' mi'}</b>.` +
+        (nearest ? ` Nearest is <b>${nearest.p.n}</b>, ${nearest.mi < 0.2
+          ? Math.round(nearest.mi * 5280) + ' ft' : nearest.mi.toFixed(1) + ' mi'} away.` : ''));
+    } else {
+      // Being outside Fayette County is a normal case, not an error — say so
+      // plainly and still answer the question they were asking.
+      draw();
+      setLocMsg(`You appear to be outside Fayette County, so you are off this map.` +
+        (nearest ? ` The closest establishment on record is <b>${nearest.p.n}</b>,
+           about <b>${nearest.mi.toFixed(0)} mi</b> away.` : ''), true);
+    }
+  }, err => {
+    locBtn.removeAttribute('aria-busy');
+    locBtn.textContent = '📍 Near me';
+    const why = {
+      1: 'Location permission was denied. You can re-enable it for this site in your browser settings.',
+      2: 'Your device could not get a fix. Trying again outdoors or with Wi-Fi on usually helps.',
+      3: 'Locating timed out.',
+    }[err.code] || 'Location is unavailable.';
+    DBG.log(`locate failed code=${err.code}`);
+    setLocMsg(why, true);
+  }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+}
+locBtn.addEventListener('click', locateMe);
 
 /* ---------------- interaction ----------------
 
@@ -302,38 +446,118 @@ function draw() {
 const tip = document.getElementById('tip');
 const hideTip = () => { tip.style.opacity = 0; };
 
-let drag = null;          // active pan, or null
-let suppressClick = false; // set when a pan happened, so it isn't read as a tap
+/* Every pointer currently down, so one finger pans and two pinch. Keeping the
+   set rather than a single `drag` is what makes the second finger a gesture
+   change instead of a competing pan. */
+const pointers = new Map();   // pointerId -> {x, y}
+let pan = null;               // one-finger pan
+let pinch = null;             // two-finger zoom
+let suppressClick = false;    // a gesture happened, so the click is not a tap
 
-const TAP_SLOP = 8;       // px a finger may wander and still count as a tap
+const TAP_SLOP = 8;           // px a finger may wander and still count as a tap
+
+const canvasXY = e => {
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+};
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+/* Zoom about a fixed screen point: whatever sits under (cx, cy) must still sit
+   there afterwards. Solving screen = u*s + t for the unchanged u gives the new
+   translation directly, which is the same maths the wheel and pinch both use. */
+function applyZoom(newScale, cx, cy, from = view) {
+  const s = Math.max(1, Math.min(40, newScale));
+  const ux = (cx - from.tx) / from.s, uy = (cy - from.ty) / from.s;
+  view.s = s;
+  view.tx = cx - ux * s;
+  view.ty = cy - uy * s;
+  if (view.s === 1) { view.tx = 0; view.ty = 0; }
+}
+
+function startPinch() {
+  const [a, b] = [...pointers.values()];
+  pinch = { d0: dist(a, b), m0: mid(a, b), s0: view.s, tx0: view.tx, ty0: view.ty };
+  pan = null;
+  suppressClick = true;
+  hideTip();
+  DBG.log(`pinch start d=${Math.round(pinch.d0)}`);
+}
 
 cv.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
-  cv.classList.add('drag');
-  DBG.log(`down id=${e.pointerId} ${e.pointerType}`);
+  pointers.set(e.pointerId, canvasXY(e));
+  if (pointers.size === 2) startPinch();
+  else if (pointers.size === 1) {
+    // Clear the flag as a new gesture begins rather than waiting for a click to
+    // consume it: a pinch frequently produces no click at all, and a flag left
+    // set would silently eat the next tap.
+    suppressClick = false;
+    pan = { id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+    cv.classList.add('drag');
+  }
+  DBG.log(`down id=${e.pointerId} ${e.pointerType} (${pointers.size} down)`);
 });
 
 window.addEventListener('pointermove', e => {
-  if (!drag || e.pointerId !== drag.id) return;
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > TAP_SLOP) drag.moved = true;
-  if (drag.moved) { view.tx = drag.tx + dx; view.ty = drag.ty + dy; hideTip(); draw(); }
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, canvasXY(e));
+
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d1 = dist(a, b);
+    if (d1 > 0 && pinch.d0 > 0) {
+      const m1 = mid(a, b);
+      // Scale from the gesture's starting view, and follow the midpoint so the
+      // pinch pans as well as zooms — otherwise it feels anchored and stiff.
+      const s = pinch.s0 * (d1 / pinch.d0);
+      const ux = (pinch.m0.x - pinch.tx0) / pinch.s0, uy = (pinch.m0.y - pinch.ty0) / pinch.s0;
+      view.s = Math.max(1, Math.min(40, s));
+      view.tx = m1.x - ux * view.s;
+      view.ty = m1.y - uy * view.s;
+      if (view.s === 1) { view.tx = 0; view.ty = 0; }
+      draw();
+    }
+    return;
+  }
+
+  if (pan && e.pointerId === pan.id) {
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (!pan.moved && Math.abs(dx) + Math.abs(dy) > TAP_SLOP) pan.moved = true;
+    if (pan.moved) { view.tx = pan.tx + dx; view.ty = pan.ty + dy; hideTip(); draw(); }
+  }
 }, { passive: true });
 
-function endPan(e) {
-  if (!drag || (e && e.pointerId !== drag.id)) return;
-  suppressClick = drag.moved;
-  drag = null;
-  cv.classList.remove('drag');
-  DBG.log(`up   moved=${suppressClick}`);
+function releasePointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+
+  if (pinch && pointers.size < 2) {
+    pinch = null;
+    // Hand the remaining finger a fresh pan rather than letting it jump.
+    const [rest] = [...pointers.keys()];
+    if (rest !== undefined) {
+      const p = pointers.get(rest);
+      const r = cv.getBoundingClientRect();
+      pan = { id: rest, x: p.x + r.left, y: p.y + r.top, tx: view.tx, ty: view.ty, moved: true };
+    }
+    DBG.log(`pinch end s=${view.s.toFixed(2)}`);
+  }
+
+  if (pan && e.pointerId === pan.id) {
+    if (pan.moved) suppressClick = true;
+    pan = null;
+    cv.classList.remove('drag');
+  }
+  if (pointers.size === 0) cv.classList.remove('drag');
+  DBG.log(`up   (${pointers.size} still down) suppress=${suppressClick}`);
 }
-window.addEventListener('pointerup', endPan);
-window.addEventListener('pointercancel', e => { if (drag) { drag = null; cv.classList.remove('drag'); DBG.log('cancel'); } });
+window.addEventListener('pointerup', releasePointer);
+window.addEventListener('pointercancel', releasePointer);
 
 // The tap itself.
 cv.addEventListener('click', e => {
-  if (suppressClick) { suppressClick = false; DBG.log('click ignored (was a pan)'); return; }
+  if (suppressClick) { suppressClick = false; DBG.log('click ignored (was a gesture)'); return; }
   const p = pick(e);
   DBG.log(`click -> ${p ? p.n : 'no point within range'}`);
   if (p) openDetail(p);
@@ -342,7 +566,7 @@ cv.addEventListener('click', e => {
 // Hover preview is a pointing-device affordance; on touch the tap opens the
 // panel instead, and a tooltip left behind would just sit there.
 cv.addEventListener('pointermove', e => {
-  if (e.pointerType === 'touch' || drag) return;
+  if (e.pointerType === 'touch' || pan || pinch) return;
   const hitP = pick(e);
   if (!hitP) return hideTip();
   const r = cv.getBoundingClientRect();
@@ -374,12 +598,7 @@ function pick(e) {
 }
 
 function zoomAt(factor, cx, cy) {
-  const ns = Math.max(1, Math.min(40, view.s * factor));
-  const k = ns / view.s;
-  view.tx = cx - (cx - view.tx) * k;
-  view.ty = cy - (cy - view.ty) * k;
-  view.s = ns;
-  if (view.s === 1) { view.tx = 0; view.ty = 0; }
+  applyZoom(view.s * factor, cx, cy);
   draw();
 }
 cv.addEventListener('wheel', e => {
@@ -437,7 +656,8 @@ window.__testProbe = {
   },
   state: () => ({ shown: shown.length, s: +view.s.toFixed(2), tx: Math.round(view.tx),
                   ty: Math.round(view.ty), fitS: +fit.s.toFixed(1), W: Math.round(W), Ht: Math.round(Ht),
-                  dragging: !!drag }),
+                  panning: !!pan, pinching: !!pinch, suppressClick, pointers: pointers.size,
+                  located: !!userLoc }),
 };
 </script>
 </body>

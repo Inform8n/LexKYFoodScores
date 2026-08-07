@@ -296,12 +296,22 @@ pre-built JSON and is published to GitHub Pages by
 | Page | What it does |
 |---|---|
 | `index.html` | Insights — the reputation gap, score trends, violations, ZIP breakdown |
-| `map.html` | Every geocoded establishment, coloured by latest score, weighted history, or the gap |
+| `map.html` | Every geocoded establishment, coloured by latest score, weighted history, or the gap. Drag to pan, pinch or scroll to zoom, and **Near me** centres on your GPS fix and lists the eight closest establishments |
 | `search.html` | Search by name, street, ZIP or permit number |
 | `selftest.html` | Not linked from the site; checks the deployed data reconciles |
 
 Clicking anything anywhere opens the same drawer with the establishment's full
 inspection history back to 2005.
+
+**Geolocation** is browser-side only — the coordinates are used to centre the map
+and measure distances, and are never sent anywhere. It needs HTTPS, which
+GitHub Pages provides. Being outside Fayette County is handled as a normal case
+rather than an error: the map says so and still reports the nearest
+establishment on record.
+
+`map.html?debug=1` shows an on-screen event log — pointer events, whether a tap
+found a point, and the drawer's live state. There is no console to attach to a
+phone, and that log is the difference between a swallowed tap and a missed one.
 
 ### Rebuilding the site's data
 

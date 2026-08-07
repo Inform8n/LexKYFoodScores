@@ -23,6 +23,12 @@ const say = (cls, m) => { log.push(`<span class="${cls}">${cls}</span>  ${esc(m)
 const render = () => { document.getElementById('log').innerHTML = log.join('\n'); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Without these a thrown error just stops the run mid-way and the report looks
+// like it merely ended early — which is exactly how a broken probe hid itself.
+window.addEventListener('error', e => say('FAIL', `threw: ${e.message}`));
+window.addEventListener('unhandledrejection', e =>
+  say('FAIL', `rejected: ${e.reason && e.reason.message ? e.reason.message : e.reason}`));
+
 /* Mirror the real touch sequence, including the bits that broke it:
    a couple of pixels of finger wander, pointerleave arriving with pointerup,
    and the click the browser synthesises afterwards. */
@@ -134,6 +140,98 @@ function tap(win, elm, x, y, opts = {}) {
   await sleep(1200);
   say(isOpen() ? 'PASS' : 'FAIL',
       `tap survives pointerleave arriving before pointerup (open=${isOpen()})`);
+  doc.querySelector('.drawer .close').click();
+  await sleep(700);
+
+  // ---------------- pinch to zoom ----------------
+  const pe = (type, id, x, y, buttons) => cv.dispatchEvent(new win.PointerEvent(type, {
+    bubbles: true, cancelable: true, composed: true, pointerId: id, pointerType: 'touch',
+    isPrimary: id === 11, button: 0, buttons, clientX: x, clientY: y }));
+
+  const before = probe.state().s;
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  pe('pointerdown', 11, cx - 40, cy, 1);
+  pe('pointerdown', 12, cx + 40, cy, 1);
+  for (let k = 1; k <= 6; k++) {
+    const spread = 40 + k * 25;
+    win.dispatchEvent(new win.PointerEvent('pointermove', { bubbles: true, pointerId: 11,
+      pointerType: 'touch', clientX: cx - spread, clientY: cy, buttons: 1 }));
+    win.dispatchEvent(new win.PointerEvent('pointermove', { bubbles: true, pointerId: 12,
+      pointerType: 'touch', clientX: cx + spread, clientY: cy, buttons: 1 }));
+  }
+  const during = probe.state().s;
+  win.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 11, pointerType: 'touch', buttons: 0 }));
+  win.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 12, pointerType: 'touch', buttons: 0 }));
+  await sleep(400);
+  say(during > before * 1.5 ? 'PASS' : 'FAIL',
+      `pinch out zooms in (scale ${before} -> ${during})`);
+  say(!isOpen() ? 'PASS' : 'FAIL', `a pinch does not open the panel (open=${isOpen()})`);
+
+  // pinch in should shrink it back
+  const beforeIn = probe.state().s;
+  pe('pointerdown', 21, cx - 180, cy, 1);
+  pe('pointerdown', 22, cx + 180, cy, 1);
+  for (let k = 1; k <= 6; k++) {
+    const spread = 180 - k * 25;
+    win.dispatchEvent(new win.PointerEvent('pointermove', { bubbles: true, pointerId: 21,
+      pointerType: 'touch', clientX: cx - spread, clientY: cy, buttons: 1 }));
+    win.dispatchEvent(new win.PointerEvent('pointermove', { bubbles: true, pointerId: 22,
+      pointerType: 'touch', clientX: cx + spread, clientY: cy, buttons: 1 }));
+  }
+  const afterIn = probe.state().s;
+  win.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 21, pointerType: 'touch', buttons: 0 }));
+  win.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true, pointerId: 22, pointerType: 'touch', buttons: 0 }));
+  await sleep(400);
+  say(afterIn < beforeIn ? 'PASS' : 'FAIL', `pinch in zooms out (${beforeIn} -> ${afterIn})`);
+
+  // ---------------- a tap still works after a pinch ----------------
+  const s6 = probe.pointScreenPos();
+  if (s6) {
+    tap(win, cv, r.left + s6.x, r.top + s6.y);
+    await sleep(1200);
+    say(isOpen() ? 'PASS' : 'FAIL',
+        `a tap after a pinch still opens the panel (open=${isOpen()})  <-- stuck-suppression check`);
+    doc.querySelector('.drawer .close').click();
+    await sleep(600);
+  } else {
+    say('INFO', 'no point in view after the pinch to tap');
+  }
+
+  // ---------------- geolocation ----------------
+  // Stub the API so the test is deterministic and never prompts.
+  const fakeAt = (lat, lon) => {
+    Object.defineProperty(win.navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: (ok) => setTimeout(() =>
+        ok({ coords: { latitude: lat, longitude: lon, accuracy: 30 } }), 30) },
+    });
+  };
+
+  fakeAt(38.0406, -84.5037);                    // downtown Lexington
+  doc.getElementById('locate').click();
+  await sleep(1200);
+  const msg1 = doc.getElementById('locmsg');
+  say(!msg1.hidden && /Centred on your location/i.test(msg1.textContent) ? 'PASS' : 'FAIL',
+      `locating in Lexington centres the map`);
+  say(!doc.getElementById('nearbox').hidden ? 'PASS' : 'FAIL', `nearest establishments are listed`);
+  say(probe.state().s > 1 ? 'PASS' : 'FAIL', `locating zooms in (s=${probe.state().s})`);
+  const first = doc.querySelector('.nearlist button .mt');
+  say('INFO', `closest: ${doc.querySelector('.nearlist button .nm')?.textContent} — ${first?.textContent}`);
+
+  fakeAt(40.7128, -74.0060);                    // New York — well off the map
+  doc.getElementById('locate').click();
+  await sleep(1200);
+  say(/outside Fayette County/i.test(doc.getElementById('locmsg').textContent) ? 'PASS' : 'FAIL',
+      `a location outside the county says so rather than failing`);
+
+  Object.defineProperty(win.navigator, 'geolocation', {
+    configurable: true,
+    value: { getCurrentPosition: (_ok, err) => setTimeout(() => err({ code: 1 }), 30) },
+  });
+  doc.getElementById('locate').click();
+  await sleep(1000);
+  say(/permission was denied/i.test(doc.getElementById('locmsg').textContent) ? 'PASS' : 'FAIL',
+      `a denied permission explains itself`);
 
   render();
 })();
