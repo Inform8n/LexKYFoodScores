@@ -1,13 +1,8 @@
 # Core data processing
 pandas>=2.0.0
 
-# PDF extraction
-camelot-py[cv]>=0.11.0
-pdfplumber>=0.10.0
+# Excel report parsing (LFCHD publishes scores as .xlsx)
+openpyxl>=3.1.0
 
-# Google Sheets integration (optional)
-gspread>=5.12.0
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
-python-dotenv>=1.0.0
+# .xls support for the oldest reports (2017-2018 era)
+xlrd>=2.0.1

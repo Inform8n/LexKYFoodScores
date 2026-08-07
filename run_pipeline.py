@@ -3,24 +3,26 @@
 run_pipeline.py
 
 Orchestrator script that runs the complete food inspection data pipeline:
-1. Extract data from PDF
-2. Clean and transform the data
-3. Join with violation descriptions
+1. Download the latest inspection score report from LFCHD
+2. Extract the data
+3. Clean and transform the data
+4. Join with violation descriptions
+5. Optionally sync to Google Sheets
 
 Usage:
-    python run_pipeline.py --scores-pdf "Food-Retail_Inspections-06.2024-06.2025.pdf"
+    python run_pipeline.py
+    python run_pipeline.py --report "Reports/Report_53_Jul-Dec_2025_establishments.xlsx"
 
     Optional arguments:
+    --force                   Reprocess even if the report is unchanged
     --scrape-date YYYY-MM-DD  Date of the scrape (defaults to today)
 """
 
 import argparse
+import os
 import subprocess
 import sys
-import os
-import shutil
 from datetime import datetime
-from dotenv import load_dotenv
 
 
 def run_command(description: str, command: list):
@@ -40,10 +42,39 @@ def run_command(description: str, command: list):
     return result
 
 
-def is_google_sheets_configured():
-    """Check if Google Sheets sync is configured in .env file."""
-    load_dotenv()
-    return os.getenv('GOOGLE_SHEET_ID') is not None
+def download_report(force: bool) -> str:
+    """Download the latest report. Returns its path, or exits if nothing is new."""
+    print("\n>> Downloading latest inspection report from LFCHD website...")
+
+    command = [sys.executable, "download_report.py"]
+    if force:
+        command.append("--force")
+
+    result = subprocess.run(command, capture_output=True, text=True)
+    print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
+
+    if result.returncode != 0:
+        print("[ERROR] Failed to download the inspection report")
+        sys.exit(1)
+
+    # download_report.py emits a machine-readable CURRENT_REPORT=<path> line.
+    report_path = None
+    for line in result.stdout.splitlines():
+        if line.startswith("CURRENT_REPORT="):
+            report_path = line.split("=", 1)[1].strip()
+
+    if not report_path:
+        print("[ERROR] Downloader did not report which file is current")
+        sys.exit(1)
+
+    if "NO UPDATE NEEDED" in result.stdout and not force:
+        print("[INFO] No new data to process. Exiting.")
+        sys.exit(0)
+
+    print(f"[SUCCESS] Using report: {report_path}")
+    return report_path
 
 
 def main():
@@ -51,19 +82,24 @@ def main():
         description="Run the complete food inspection data pipeline"
     )
     parser.add_argument(
-        "--scores-pdf",
+        "--report",
         default=None,
-        help="Path to the food-scores PDF (if not provided, will download latest)"
+        help="Path to an inspection score report (if omitted, downloads the latest)"
     )
     parser.add_argument(
-        "--download",
+        "--force",
         action="store_true",
-        help="Download the latest PDF before processing"
+        help="Reprocess even if the online report is unchanged"
     )
     parser.add_argument(
         "--scrape-date",
         default=None,
         help="Date of the scrape (YYYY-MM-DD). Defaults to today."
+    )
+    parser.add_argument(
+        "--skip-site",
+        action="store_true",
+        help="Skip rebuilding the static site's data files"
     )
     parser.add_argument(
         "--scores-csv",
@@ -75,104 +111,66 @@ def main():
         default="food_scores_cleaned.csv",
         help="Output CSV for cleaned data"
     )
+    parser.add_argument(
+        "--history-csv",
+        default="food_scores_history.csv",
+        help="Backfilled historical raw data, folded in when present"
+    )
 
     args = parser.parse_args()
 
-    # Download PDF if requested or if no PDF specified
-    if args.download or args.scores_pdf is None:
-        print("\n>> Downloading latest PDF from LFCHD website...")
-        download_cmd = ["python", "download_pdf.py"]
-        result = subprocess.run(download_cmd, capture_output=True, text=True)
+    if args.report is None:
+        args.report = download_report(args.force)
 
-        # Exit code 0 means either download succeeded or no update needed (both are OK)
-        if result.returncode != 0:
-            print(f"[ERROR] Failed to download PDF: {result.stderr}")
-            sys.exit(1)
-
-        print(result.stdout)
-
-        # Check if download was skipped (no update needed)
-        if "NO UPDATE NEEDED" in result.stdout:
-            print("[INFO] No new data to process. Exiting.")
-            sys.exit(0)
-
-        # Find the downloaded PDF in PDFs directory
-        pdf_dir = "PDFs"
-        if os.path.isdir(pdf_dir):
-            # Look for the most recent non-timestamped PDF
-            pdfs = [f for f in os.listdir(pdf_dir) if f.endswith('.pdf') and '_' not in f]
-            if pdfs:
-                args.scores_pdf = os.path.join(pdf_dir, pdfs[0])
-                print(f"[SUCCESS] Using downloaded PDF: {args.scores_pdf}")
-            else:
-                print("[ERROR] No PDF found in PDFs directory after download")
-                sys.exit(1)
-        else:
-            print("[ERROR] PDFs directory not found after download")
-            sys.exit(1)
-
-    # Validate input files exist
-    if not os.path.isfile(args.scores_pdf):
-        print(f"[ERROR] Scores PDF not found: {args.scores_pdf}")
-        print("Tip: Use --download to automatically download the latest PDF")
+    if not os.path.isfile(args.report):
+        print(f"[ERROR] Report not found: {args.report}")
         sys.exit(1)
 
-    # Display pipeline info
     scrape_date = args.scrape_date or datetime.now().strftime('%Y-%m-%d')
     print("\n" + "="*60)
     print("FOOD INSPECTION DATA PIPELINE")
     print("="*60)
-    print(f"Scores PDF:     {args.scores_pdf}")
+    print(f"Report:         {args.report}")
     print(f"Scrape Date:    {scrape_date}")
     print(f"Output CSV:     joined_scores_violations.csv")
     print("="*60)
 
-    # Step 1: Extract data from PDF
+    # Step 1: Extract data from the report
     extract_cmd = [
-        "python", "LexFoodScoresExtract.py",
-        "--scores-pdf", args.scores_pdf,
+        sys.executable, "extract_report_scores.py",
+        "--report", args.report,
         "--scores-csv", args.scores_csv,
+        "--scrape-date", scrape_date,
     ]
-    if args.scrape_date:
-        extract_cmd.extend(["--scrape-date", args.scrape_date])
+    run_command("Step 1: Extract data from report", extract_cmd)
 
-    run_command("Step 1: Extract data from PDF", extract_cmd)
+    # Step 2: Transform and clean data.
+    # The backfilled history (produced once by backfill_history.py) is a separate
+    # raw file so that re-running either it or the nightly extract stays
+    # idempotent; both are fed to the transform together.
+    raw_inputs = [args.scores_csv]
+    if os.path.isfile(args.history_csv):
+        raw_inputs.append(args.history_csv)
+    else:
+        print(f"\n[INFO] No {args.history_csv} found - processing current data only."
+              f"\n       Run 'python backfill_history.py' to recover LFCHD's full history.")
 
-    # Step 2: Transform and clean data
     transform_cmd = [
-        "python", "transform_food_scores.py",
-        "--input", args.scores_csv,
+        sys.executable, "transform_food_scores.py",
+        "--input", *raw_inputs,
         "--output", args.cleaned_csv
     ]
     run_command("Step 2: Transform and clean data", transform_cmd)
 
     # Step 3: Join with violation descriptions
-    join_cmd = [
-        "python", "JoinScoresViolations.py"
-    ]
+    join_cmd = [sys.executable, "JoinScoresViolations.py"]
     run_command("Step 3: Join with violation descriptions", join_cmd)
 
-    # Step 4 (Optional): Sync to Google Sheets
-    if is_google_sheets_configured():
-        sync_cmd = [
-            "python", "sync_to_sheets.py"
-        ]
-        run_command("Step 4: Sync to Google Sheets", sync_cmd)
-    else:
-        print("\n[INFO] Skipping Google Sheets sync (not configured in .env)")
-
-    # Move PDFs to PDFs directory if they're not already there
-    pdf_dir = "PDFs"
-    os.makedirs(pdf_dir, exist_ok=True)
-
-    # Move scores PDF if needed
-    if not args.scores_pdf.startswith(pdf_dir):
-        pdf_basename = os.path.basename(args.scores_pdf)
-        target_path = os.path.join(pdf_dir, pdf_basename)
-        if os.path.exists(args.scores_pdf) and not os.path.exists(target_path):
-            print(f"\n>> Moving {pdf_basename} to {pdf_dir}/")
-            shutil.move(args.scores_pdf, target_path)
-            print(f"[SUCCESS] Moved to {target_path}")
+    # Step 4: Build the static site's data files
+    if args.skip_site:
+        print("\n[INFO] Skipping site data build (--skip-site)")
+    elif os.path.isfile("build_site_data.py"):
+        run_command("Step 4: Build site data", [sys.executable, "build_site_data.py"])
 
     # Final summary
     print("\n" + "="*60)
@@ -180,16 +178,15 @@ def main():
     print("="*60)
     print(f"\nFinal output: joined_scores_violations.csv")
 
-    # Show some stats if the file exists
     if os.path.isfile("joined_scores_violations.csv"):
         import pandas as pd
-        df = pd.read_csv("joined_scores_violations.csv")
+        df = pd.read_csv("joined_scores_violations.csv", low_memory=False)
         print(f"\nDataset statistics:")
-        print(f"  Total records:        {len(df):,}")
+        print(f"  Total records:         {len(df):,}")
         print(f"  Unique establishments: {df['Permit #'].nunique():,}")
-        print(f"  Date range:           {df['Date'].min()} to {df['Date'].max()}")
+        print(f"  Date range:            {df['Date'].min()} to {df['Date'].max()}")
         if 'ScrapeDate' in df.columns:
-            print(f"  Scrape dates:         {df['ScrapeDate'].nunique()} unique dates")
+            print(f"  Scrape dates:          {df['ScrapeDate'].nunique()} unique dates")
 
     print("\nReady for analysis!\n")
 

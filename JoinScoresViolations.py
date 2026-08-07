@@ -2,9 +2,17 @@ import pandas as pd
 
 
 def main():
-    # Read CSV files with violation codes as strings to avoid type mismatches
-    df_scores = pd.read_csv('food_scores_cleaned.csv', dtype={'Violations': str})
+    # Read everything as strings. Beyond avoiding violation-code type mismatches,
+    # this keeps already-published rows byte-identical: columns that are numeric
+    # for PDF-sourced rows but blank for spreadsheet-sourced ones would otherwise
+    # be inferred as float and rewrite every existing '1' as '1.0'.
+    df_scores = pd.read_csv('food_scores_cleaned.csv', dtype=str)
     df_codes = pd.read_csv('CodeViolations.csv', dtype={'Violation Code': str})
+
+    # Score is the one column that should be numeric in the published output.
+    # Set it explicitly rather than relying on inference, so its formatting does
+    # not shift when a new source writes it differently.
+    df_scores['Score'] = pd.to_numeric(df_scores['Score'], errors='coerce')
 
     # Merge on violation codes (left join to keep all inspection records)
     df_merged = df_scores.merge(

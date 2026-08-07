@@ -11,7 +11,7 @@ REM   - Run daily via Task Scheduler to auto-check for updates
 REM
 REM The script will:
 REM   1. Check if Python is installed
-REM   2. Download latest PDF (skips if unchanged via MD5)
+REM   2. Download the latest inspection report (skips if unchanged via MD5)
 REM   3. Process data and generate final CSV
 REM ============================================================
 
@@ -42,14 +42,14 @@ echo.
 
 REM Check if required Python packages are installed
 echo [INFO] Checking dependencies...
-python -c "import pandas, camelot, pdfplumber" >nul 2>&1
+python -c "import pandas, openpyxl, dotenv" >nul 2>&1
 if errorlevel 1 (
     echo [WARNING] Some Python packages may be missing
     echo [INFO] Attempting to install required packages...
-    python -m pip install pandas camelot-py pdfplumber
+    python -m pip install -r requirements.txt
     if errorlevel 1 (
         echo [ERROR] Failed to install dependencies
-        echo Please run: pip install pandas camelot-py pdfplumber
+        echo Please run: pip install -r requirements.txt
         pause
         exit /b 1
     )
@@ -60,7 +60,7 @@ echo.
 REM Run the pipeline
 echo [INFO] Starting pipeline...
 echo.
-python run_pipeline.py
+python run_pipeline.py %*
 
 if errorlevel 1 (
     echo.

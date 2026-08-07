@@ -27,6 +27,8 @@ token.json
 .claude/
 node_modules/
 PDFs/
+Reports/
+logs/
 
 # Archive
 Archive/
@@ -37,6 +39,7 @@ PDFs/
 # Intermediate CSV files (not needed in repo)
 food_scores.csv
 food_scores_cleaned.csv
+food_scores_history.csv
 infractions.csv
 
 # Final output CSV (keep this one!)
