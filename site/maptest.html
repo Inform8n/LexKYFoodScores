@@ -23,12 +23,25 @@ const say = (cls, m) => { log.push(`<span class="${cls}">${cls}</span>  ${esc(m)
 const render = () => { document.getElementById('log').innerHTML = log.join('\n'); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function tap(win, elm, x, y) {
-  const opts = { bubbles: true, cancelable: true, composed: true,
-                 clientX: x, clientY: y, pointerId: 1, pointerType: 'touch',
-                 isPrimary: true, button: 0, buttons: 1 };
-  elm.dispatchEvent(new win.PointerEvent('pointerdown', opts));
-  elm.dispatchEvent(new win.PointerEvent('pointerup', { ...opts, buttons: 0 }));
+/* Mirror the real touch sequence, including the bits that broke it:
+   a couple of pixels of finger wander, pointerleave arriving with pointerup,
+   and the click the browser synthesises afterwards. */
+function tap(win, elm, x, y, opts = {}) {
+  const wander = opts.wander ?? 2;
+  const id = opts.id ?? Math.floor(Math.random() * 1000) + 2;
+  const base = { bubbles: true, cancelable: true, composed: true,
+                 pointerId: id, pointerType: 'touch', isPrimary: true, button: 0 };
+  elm.dispatchEvent(new win.PointerEvent('pointerdown', { ...base, clientX: x, clientY: y, buttons: 1 }));
+  if (wander) {
+    elm.dispatchEvent(new win.PointerEvent('pointermove',
+      { ...base, clientX: x + wander, clientY: y + wander, buttons: 1 }));
+  }
+  elm.dispatchEvent(new win.PointerEvent('pointerup',
+    { ...base, clientX: x + wander, clientY: y + wander, buttons: 0 }));
+  // pointerleave used to clear the drag state; fire it to prove it no longer can
+  elm.dispatchEvent(new win.PointerEvent('pointerleave', { ...base, clientX: x, clientY: y, buttons: 0 }));
+  elm.dispatchEvent(new win.MouseEvent('click',
+    { bubbles: true, cancelable: true, composed: true, clientX: x + wander, clientY: y + wander, button: 0 }));
 }
 
 (async () => {
@@ -89,6 +102,38 @@ function tap(win, elm, x, y) {
   tap(win, cv, r.left + (spot2 ? spot2.x : spot.x), r.top + (spot2 ? spot2.y : spot.y));
   await sleep(1500);
   say(isOpen() ? 'PASS' : 'FAIL', `second tap re-opened the drawer (open=${isOpen()})  <-- the reported bug`);
+
+  // --- and a third, to be sure it is not just alternating
+  doc.querySelector('.drawer .close').click();
+  await sleep(900);
+  const spot3 = probe.pointScreenPos();
+  tap(win, cv, r.left + spot3.x, r.top + spot3.y);
+  await sleep(1200);
+  say(isOpen() ? 'PASS' : 'FAIL', `third tap re-opened the drawer (open=${isOpen()})`);
+
+  // --- a drag must NOT be read as a tap
+  doc.querySelector('.drawer .close').click();
+  await sleep(900);
+  const s4 = probe.pointScreenPos();
+  tap(win, cv, r.left + s4.x, r.top + s4.y, { wander: 60 });
+  await sleep(900);
+  say(!isOpen() ? 'PASS' : 'FAIL', `a drag across the map does not open the panel (open=${isOpen()})`);
+
+  // --- the ordering the old code could not survive: pointerleave BEFORE pointerup.
+  // On touch the finger "leaves" as it lifts, and the previous version cleared
+  // its drag state there, discarding the tap.
+  const s5 = probe.pointScreenPos();
+  const X = r.left + s5.x, Y = r.top + s5.y;
+  const base = { bubbles: true, cancelable: true, composed: true,
+                 pointerId: 77, pointerType: 'touch', isPrimary: true, button: 0 };
+  cv.dispatchEvent(new win.PointerEvent('pointerdown', { ...base, clientX: X, clientY: Y, buttons: 1 }));
+  cv.dispatchEvent(new win.PointerEvent('pointerleave', { ...base, clientX: X, clientY: Y, buttons: 0 }));
+  cv.dispatchEvent(new win.PointerEvent('pointerup',    { ...base, clientX: X, clientY: Y, buttons: 0 }));
+  cv.dispatchEvent(new win.MouseEvent('click',
+    { bubbles: true, cancelable: true, composed: true, clientX: X, clientY: Y, button: 0 }));
+  await sleep(1200);
+  say(isOpen() ? 'PASS' : 'FAIL',
+      `tap survives pointerleave arriving before pointerup (open=${isOpen()})`);
 
   render();
 })();

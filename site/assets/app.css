@@ -231,8 +231,15 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 @media (max-width: 620px) {
   .wrap { padding: 22px 14px 52px; }
   .grid { grid-template-columns: 1fr; }
-  .topbar .inner { gap: 12px; padding: 10px 14px; }
+  /* The wordmark plus three nav items will not fit a phone on one line, so let
+     the bar become two rows rather than pushing "Search" off the edge. */
+  .topbar .inner { gap: 4px 10px; padding: 9px 12px; flex-wrap: wrap; }
   .asof { display: none; }
+  .brand { font-size: 14px; flex: 1 0 100%; }
+  .brand span { display: none; }
+  nav { flex: 1 1 auto; margin-left: -8px; }
+  nav a { padding: 5px 10px; font-size: 13.5px; }
   input[type="search"] { min-width: 0; width: 100%; }
+  .controls { gap: 8px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

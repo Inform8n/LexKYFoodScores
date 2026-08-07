@@ -111,8 +111,38 @@ import { data, fmt, h, css, openDetail, markNav, stampAsOf } from './assets/app.
 
 markNav(); stampAsOf();
 
+/* ---------------- diagnostics ----------------
+   Off unless the URL says ?debug=1. Shows what the map is actually receiving,
+   which is the only way to tell a swallowed tap from a missed one on a phone
+   you cannot attach a console to. */
+const DBG = (() => {
+  if (!new URLSearchParams(location.search).has('debug')) {
+    return { log() {}, on: false };
+  }
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:38vh;overflow:auto;' +
+    'background:rgba(0,0,0,.88);color:#8f8;font:11px ui-monospace,Menlo,Consolas,monospace;' +
+    'padding:8px 10px;z-index:9999;white-space:pre-wrap;line-height:1.45';
+  document.addEventListener('DOMContentLoaded', () => document.body.append(box));
+  if (document.body) document.body.append(box);
+  const lines = [];
+  return {
+    on: true,
+    log(m) {
+      const d = document.querySelector('.drawer');
+      const state = d ? `[drawer ${d.classList.contains('open') ? 'OPEN' : 'closed'}` +
+                        ` inert=${d.inert} pe=${getComputedStyle(d).pointerEvents}]` : '[no drawer]';
+      lines.push(`${new Date().toISOString().slice(14, 22)} ${m} ${state}`);
+      if (lines.length > 40) lines.shift();
+      box.textContent = lines.join('\n');
+      box.scrollTop = box.scrollHeight;
+    },
+  };
+})();
+
 const [E, GEO] = await Promise.all([data('establishments'), data('geo')]);
 const places = E.items.filter(p => p.lat !== null && p.lon !== null);
+if (DBG.on) DBG.log(`loaded ${places.length} mapped places`);
 
 /* ---------------- projection ----------------
    Equirectangular with a cos(lat) correction — at city scale the distortion is
@@ -254,48 +284,67 @@ function draw() {
     `${fmt(shown.length)} of ${fmt(places.length)} mapped places`;
 }
 
-/* ---------------- interaction ---------------- */
-let drag = null;
+/* ---------------- interaction ----------------
 
-function endDrag(e) {
-  cv.classList.remove('drag');
-  // Release explicitly. A capture left behind by a cancelled touch keeps
-  // routing later pointers to the canvas element that no longer expects them.
-  if (e && cv.hasPointerCapture?.(e.pointerId)) {
-    try { cv.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
-  }
-  drag = null;
-}
+   Deliberately boring, because the clever version had a mobile-only failure.
 
-cv.addEventListener('pointerdown', e => {
-  drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
-  // Must not throw: an exception here would skip everything after it, and a
-  // synthetic or already-released pointer id makes this raise NotFoundError.
-  try { cv.setPointerCapture(e.pointerId); } catch { /* fine without capture */ }
-  cv.classList.add('drag');
-});
-cv.addEventListener('pointerup', e => {
-  const wasTap = drag && !drag.moved;
-  endDrag(e);
-  if (wasTap) clickAt(e);
-});
-// Touch gestures get cancelled routinely — without this the drag state and the
-// pointer capture both survive the gesture that was abandoned.
-cv.addEventListener('pointercancel', endDrag);
-cv.addEventListener('lostpointercapture', () => { cv.classList.remove('drag'); drag = null; });
-cv.addEventListener('pointerleave', () => { drag = null; cv.classList.remove('drag'); tip.style.opacity = 0; });
+   A tap is detected from `click`, not from `pointerup`. `click` is the one
+   event every platform agrees on: it fires after the pointer sequence settles
+   and its target is stable. The previous version reconstructed a tap out of
+   pointerdown/pointerup while `pointerleave` cleared the drag state — and on
+   touch, pointerleave fires when the finger lifts, so whenever it arrived first
+   the tap was silently thrown away. Pointer capture happened to mask that on
+   the first tap and not afterwards, which is exactly the reported symptom.
+
+   No setPointerCapture either. Panning tracks on `window` instead, so a drag
+   that leaves the canvas still works without any capture bookkeeping to leak. */
 
 const tip = document.getElementById('tip');
+const hideTip = () => { tip.style.opacity = 0; };
+
+let drag = null;          // active pan, or null
+let suppressClick = false; // set when a pan happened, so it isn't read as a tap
+
+const TAP_SLOP = 8;       // px a finger may wander and still count as a tap
+
+cv.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false };
+  cv.classList.add('drag');
+  DBG.log(`down id=${e.pointerId} ${e.pointerType}`);
+});
+
+window.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) > TAP_SLOP) drag.moved = true;
+  if (drag.moved) { view.tx = drag.tx + dx; view.ty = drag.ty + dy; hideTip(); draw(); }
+}, { passive: true });
+
+function endPan(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  suppressClick = drag.moved;
+  drag = null;
+  cv.classList.remove('drag');
+  DBG.log(`up   moved=${suppressClick}`);
+}
+window.addEventListener('pointerup', endPan);
+window.addEventListener('pointercancel', e => { if (drag) { drag = null; cv.classList.remove('drag'); DBG.log('cancel'); } });
+
+// The tap itself.
+cv.addEventListener('click', e => {
+  if (suppressClick) { suppressClick = false; DBG.log('click ignored (was a pan)'); return; }
+  const p = pick(e);
+  DBG.log(`click -> ${p ? p.n : 'no point within range'}`);
+  if (p) openDetail(p);
+});
+
+// Hover preview is a pointing-device affordance; on touch the tap opens the
+// panel instead, and a tooltip left behind would just sit there.
 cv.addEventListener('pointermove', e => {
-  if (drag) {
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-    view.tx = drag.tx + dx; view.ty = drag.ty + dy;
-    tip.style.opacity = 0;
-    return draw();
-  }
+  if (e.pointerType === 'touch' || drag) return;
   const hitP = pick(e);
-  if (!hitP) { tip.style.opacity = 0; return; }
+  if (!hitP) return hideTip();
   const r = cv.getBoundingClientRect();
   const g = (hitP.l !== null && hitP.w !== null) ? (hitP.l - hitP.w).toFixed(1) : null;
   tip.innerHTML = `<b>${hitP.n || 'Permit ' + hitP.p}</b><br>` +
@@ -308,11 +357,14 @@ cv.addEventListener('pointermove', e => {
   tip.style.left = Math.min(x + 14, r.width - tip.offsetWidth - 6) + 'px';
   tip.style.top = Math.max(4, y - tip.offsetHeight - 12) + 'px';
 });
+cv.addEventListener('pointerleave', hideTip);   // tooltip only — never drag state
 
 function pick(e) {
   const r = cv.getBoundingClientRect();
   const mx = e.clientX - r.left, my = e.clientY - r.top;
-  let best = null, bd = 14 * 14;
+  // A fingertip is far bigger than a 3px dot, so touch gets a wider net.
+  const reach = e.pointerType === 'touch' ? 22 : 14;
+  let best = null, bd = reach * reach;
   for (const p of shown) {
     const [x, y] = toScreen(...px(p));
     const d = (x - mx) ** 2 + (y - my) ** 2;
@@ -320,7 +372,6 @@ function pick(e) {
   }
   return best;
 }
-function clickAt(e) { const p = pick(e); if (p) openDetail(p); }
 
 function zoomAt(factor, cx, cy) {
   const ns = Math.max(1, Math.min(40, view.s * factor));
